@@ -1,0 +1,6 @@
+R_DEF: Internal format may change without notice
+local
+drawable ic_neurovibe
+drawable neurosense_hero
+string app_name
+style AppTheme

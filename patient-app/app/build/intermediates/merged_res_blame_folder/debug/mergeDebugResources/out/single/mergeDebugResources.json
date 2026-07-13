@@ -1,0 +1,10 @@
+[
+    {
+        "merged": "io.alphaion.neurovibe.app-debug-4:/drawable_ic_neurovibe.xml.flat",
+        "source": "io.alphaion.neurovibe.app-main-6:/drawable/ic_neurovibe.xml"
+    },
+    {
+        "merged": "io.alphaion.neurovibe.app-debug-4:/drawable-nodpi_neurosense_hero.png.flat",
+        "source": "io.alphaion.neurovibe.app-main-6:/drawable-nodpi/neurosense_hero.png"
+    }
+]

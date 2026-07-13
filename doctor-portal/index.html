@@ -17,5 +17,13 @@
     <p class="login-footer">NeuroVibe prototype · Access is logged and controlled by your organization.</p>
   </main>
   <aside class="login-art" aria-hidden="true"><div class="pulse-lines"></div><div class="login-art-copy"><div class="eyebrow" style="color:#88cffb">Connected neurological care</div><h2>Clear oversight for every patient and device.</h2><p>Review schedules, device health and synchronized vibration-session records from one clinical workspace.</p><div class="secure-note"><span class="material-symbols-outlined">shield_lock</span><span>Patient access is restricted using Supabase authentication and database row-level policies.</span></div></div></aside>
+  <script>
+    if (location.protocol === "file:") {
+      const alert = document.getElementById("login-alert");
+      alert.textContent = "This portal cannot sign in when index.html is opened directly. Run start-portal.cmd, then open http://127.0.0.1:4173.";
+      alert.className = "form-alert error";
+      document.querySelector("#login-form button[type=submit]").disabled = true;
+    }
+  </script>
   <script type="module" src="assets/app.js"></script>
 </body></html>

@@ -1,3 +1,12 @@
 /login      /index.html       200
 /dashboard  /dashboard.html   200
 /patients   /patients.html    200
+/devices    /devices.html     200
+/care-plans /care-plans.html  200
+/schedules  /schedules.html   200
+/sessions   /sessions.html    200
+/reports    /reports.html     200
+/alerts     /alerts.html      200
+/audit      /audit.html       200
+/settings   /settings.html    200
+/gateway    /gateway/index.html 200

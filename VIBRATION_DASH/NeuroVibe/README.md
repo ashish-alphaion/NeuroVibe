@@ -23,9 +23,16 @@ Select:
 Board: ESP32C3 Dev Module
 USB CDC On Boot: Enabled
 Upload Speed: 921600 or a stable lower value
-Partition Scheme: a scheme containing a SPIFFS/LittleFS data partition
+Flash Size: 4MB (32Mb)
+Partition Scheme: the sketch-local partitions.csv is used automatically
 Serial Monitor: 115200 baud
 ```
+
+The included `partitions.csv` provides a 2 MB application partition and a
+1.94 MB LittleFS partition. The full Wi-Fi + BLE + TLS firmware is larger than
+the default 1.25 MB application partition, so do not compile this sketch with
+the default partition table. This prototype layout has no OTA update slot;
+upload firmware over USB.
 
 The BLE implementation follows the Arduino-ESP32 BLE server pattern documented by Espressif. ArduinoJson 7 is used for command parsing and session serialization.
 

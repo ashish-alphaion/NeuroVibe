@@ -1,0 +1,4 @@
+io.alphaion.neurovibe:style/AppTheme = 0x7f030000
+io.alphaion.neurovibe:string/app_name = 0x7f020000
+io.alphaion.neurovibe:drawable/neurosense_hero = 0x7f010001
+io.alphaion.neurovibe:drawable/ic_neurovibe = 0x7f010000

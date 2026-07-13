@@ -1,0 +1,4 @@
+int drawable ic_neurovibe 0x7f010000
+int drawable neurosense_hero 0x7f010001
+int string app_name 0x7f020000
+int style AppTheme 0x7f030000

@@ -32,7 +32,7 @@ export async function requirePortalUser() {
   const auth = await getAuthenticatedProfile();
   if (!auth) {
     const returnTo = encodeURIComponent(location.pathname + location.search);
-    location.replace(`/index.html?returnTo=${returnTo}`);
+    location.replace(new URL(`index.html?returnTo=${returnTo}`, document.baseURI));
     return null;
   }
   return auth;
@@ -40,5 +40,5 @@ export async function requirePortalUser() {
 
 export async function signOut() {
   await supabase.auth.signOut();
-  location.replace("/index.html");
+  location.replace(new URL("index.html", document.baseURI));
 }

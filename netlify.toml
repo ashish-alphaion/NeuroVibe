@@ -1,5 +1,5 @@
 [build]
-  publish = "public"
+  publish = "doctor-portal"
   functions = "netlify/functions"
 
 [functions]
@@ -17,10 +17,82 @@
   status = 200
   force = true
 
+[[redirects]]
+  from = "/api/staff"
+  to = "/.netlify/functions/staff"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/gateway"
+  to = "/gateway/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/login"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/dashboard"
+  to = "/dashboard.html"
+  status = 200
+
+[[redirects]]
+  from = "/patients"
+  to = "/patients.html"
+  status = 200
+
+[[redirects]]
+  from = "/devices"
+  to = "/devices.html"
+  status = 200
+
+[[redirects]]
+  from = "/care-plans"
+  to = "/care-plans.html"
+  status = 200
+
+[[redirects]]
+  from = "/schedules"
+  to = "/schedules.html"
+  status = 200
+
+[[redirects]]
+  from = "/sessions"
+  to = "/sessions.html"
+  status = 200
+
+[[redirects]]
+  from = "/reports"
+  to = "/reports.html"
+  status = 200
+
+[[redirects]]
+  from = "/alerts"
+  to = "/alerts.html"
+  status = 200
+
+[[redirects]]
+  from = "/audit"
+  to = "/audit.html"
+  status = 200
+
+[[redirects]]
+  from = "/settings"
+  to = "/settings.html"
+  status = 200
+
 [[headers]]
   for = "/*"
   [headers.values]
     X-Content-Type-Options = "nosniff"
     X-Frame-Options = "DENY"
-    Referrer-Policy = "no-referrer"
+    Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://immeobunbmxsicmixvpo.supabase.co https://neurovibeapi.netlify.app; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+
+[[headers]]
+  for = "/gateway/*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'"

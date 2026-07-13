@@ -1,5 +1,6 @@
 import { getAuthenticatedProfile, inspectPortalAccess, requirePortalUser, signOut } from "./auth.js";
 import { supabase } from "./supabase-client.js";
+import { initializeModule, openDeviceAssignment, openPatientEdit, openPatientEnrollment, openPatientExit } from "./modules.js";
 
 const page = document.body.dataset.page;
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -27,7 +28,7 @@ function showToast(message) {
 async function initializeLogin() {
   const existing = await getAuthenticatedProfile();
   if (existing) {
-    location.replace("/dashboard.html");
+    location.replace(new URL("dashboard.html", document.baseURI));
     return;
   }
   const form = $("#login-form");
@@ -71,7 +72,10 @@ async function initializeLogin() {
       return;
     }
     const requested = new URLSearchParams(location.search).get("returnTo");
-    location.replace(requested?.startsWith("/") && !requested.startsWith("//") ? requested : "/dashboard.html");
+    const destination = requested?.startsWith("/") && !requested.startsWith("//")
+      ? new URL(requested, location.origin)
+      : new URL("dashboard.html", document.baseURI);
+    location.replace(destination);
   });
 }
 
@@ -79,14 +83,14 @@ function portalShell(profile) {
   const nav = [
     ["dashboard", "dashboard.html", "dashboard", "Dashboard"],
     ["patients", "patients.html", "group", "Patients"],
-    ["devices", "#", "precision_manufacturing", "Devices"],
-    ["care-plans", "#", "assignment", "Care Plans"],
-    ["schedules", "#", "calendar_month", "Schedules"],
-    ["sessions", "#", "monitor_heart", "Sessions"],
-    ["reports", "#", "assessment", "Reports"],
-    ["alerts", "#", "warning", "Alerts"],
-    ["audit", "#", "history", "Audit Log"],
-    ["settings", "#", "settings", "Settings"],
+    ["devices", "devices.html", "precision_manufacturing", "Devices"],
+    ["care-plans", "care-plans.html", "assignment", "Care Plans"],
+    ["schedules", "schedules.html", "calendar_month", "Schedules"],
+    ["sessions", "sessions.html", "monitor_heart", "Sessions"],
+    ["reports", "reports.html", "assessment", "Reports"],
+    ["alerts", "alerts.html", "warning", "Alerts"],
+    ["audit", "audit.html", "history", "Audit Log"],
+    ["settings", "settings.html", "settings", "Settings"],
   ];
   const activePage = page === "patient" ? "patients" : page;
   $("#sidebar").innerHTML = `
@@ -95,14 +99,13 @@ function portalShell(profile) {
     <div class="sidebar-bottom"><button class="btn btn-primary" style="width:100%" data-enrollment><span class="material-symbols-outlined">person_add</span>Add patient</button></div>`;
   $("#topbar").innerHTML = `
     <div class="topbar-left"><button class="icon-button mobile-menu" id="mobile-menu" aria-label="Open navigation"><span class="material-symbols-outlined">menu</span></button><div class="global-search"><span class="material-symbols-outlined">search</span><input id="global-search" aria-label="Search" placeholder="Search patient code or name"></div></div>
-    <div class="topbar-actions"><button class="icon-button" aria-label="Notifications"><span class="material-symbols-outlined">notifications</span></button><button class="icon-button" aria-label="Help"><span class="material-symbols-outlined">help</span></button><div class="doctor-chip"><span class="avatar">${escapeHtml(initials(profile.full_name || profile.email))}</span><span class="doctor-meta"><strong>${escapeHtml(profile.full_name || profile.email)}</strong><span>${escapeHtml(profile.role === "admin" ? "Administrator" : "Doctor")}</span></span><button class="icon-button" id="sign-out" aria-label="Sign out"><span class="material-symbols-outlined">logout</span></button></div></div>`;
+    <div class="topbar-actions"><a class="icon-button" href="alerts.html" aria-label="Notifications"><span class="material-symbols-outlined">notifications</span></a><a class="icon-button" href="settings.html" aria-label="Help and settings"><span class="material-symbols-outlined">help</span></a><div class="doctor-chip"><span class="avatar">${escapeHtml(initials(profile.full_name || profile.email))}</span><span class="doctor-meta"><strong>${escapeHtml(profile.full_name || profile.email)}</strong><span>${escapeHtml(profile.role === "admin" ? "Administrator" : "Doctor")}</span></span><button class="icon-button" id="sign-out" aria-label="Sign out"><span class="material-symbols-outlined">logout</span></button></div></div>`;
 
   $("#mobile-menu")?.addEventListener("click", () => $("#sidebar").classList.toggle("open"));
   $("#sign-out")?.addEventListener("click", signOut);
-  $$('[href="#"]').forEach((link) => link.addEventListener("click", (event) => { event.preventDefault(); showToast(`${link.textContent.trim()} will be connected in the next portal module.`); }));
-  $$('[data-enrollment]').forEach((button) => button.addEventListener("click", () => showToast("Patient enrollment API is the next implementation step.")));
+  $$('[data-enrollment]').forEach((button) => button.addEventListener("click", () => openPatientEnrollment({ profile })));
   $("#global-search")?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && event.target.value.trim()) location.href = `/patients.html?q=${encodeURIComponent(event.target.value.trim())}`;
+    if (event.key === "Enter" && event.target.value.trim()) location.href = `patients.html?q=${encodeURIComponent(event.target.value.trim())}`;
   });
 }
 
@@ -112,7 +115,8 @@ async function initializePortal() {
   portalShell(auth.profile);
   if (page === "dashboard") await loadDashboard();
   if (page === "patients") await loadPatients();
-  if (page === "patient") await loadPatientDetail();
+  if (page === "patient") await loadPatientDetail(auth);
+  if (!["dashboard", "patients", "patient"].includes(page)) await initializeModule(page, auth);
 }
 
 async function loadDashboard() {
@@ -223,9 +227,9 @@ function renderPatientTable() {
   }).join("");
 }
 
-async function loadPatientDetail() {
+async function loadPatientDetail(auth) {
   const id = new URLSearchParams(location.search).get("id");
-  if (!id) { location.replace("/patients.html"); return; }
+  if (!id) { location.replace(new URL("patients.html", document.baseURI)); return; }
   const [patientResult, sessionsResult] = await Promise.all([
     supabase.from("patients").select(`id, patient_code, full_name, date_of_birth, gender, phone, email, program_status, consent_status, device_assignments(id, status, starts_at, devices(id, display_name, lifecycle_status, firmware_version, last_seen_at, pending_record_count)), care_plans(id, name, status, min_hz, target_hz, max_hz, duration_seconds, max_duration_seconds, manual_control_allowed), scheduled_sessions(id, scheduled_for, target_hz, duration_seconds, status)`).eq("id", id).maybeSingle(),
     supabase.from("therapy_sessions").select("id, started_at_utc, duration_seconds, requested_hz, estimated_hz, status, completion_reason, sync_source").eq("patient_id", id).order("started_at_utc", { ascending: false }).limit(20),
@@ -234,10 +238,10 @@ async function loadPatientDetail() {
     $("#patient-content").innerHTML = `<div class="card empty-state"><span class="material-symbols-outlined">person_off</span><h3>Patient not found</h3><p>The record is unavailable or outside your access.</p><a class="btn btn-primary" href="patients.html">Return to patients</a></div>`;
     return;
   }
-  renderPatientDetail(patientResult.data, sessionsResult.data ?? []);
+  renderPatientDetail(patientResult.data, sessionsResult.data ?? [], auth);
 }
 
-function renderPatientDetail(patient, sessions) {
+function renderPatientDetail(patient, sessions, auth) {
   const assignment = patient.device_assignments?.find((item) => item.status === "active");
   const device = assignment?.devices;
   const plan = patient.care_plans?.find((item) => item.status === "active");
@@ -265,7 +269,14 @@ function renderPatientDetail(patient, sessions) {
   $("#pending-records").textContent = device?.pending_record_count ?? 0;
   const body = $("#patient-sessions");
   body.innerHTML = sessions.length ? sessions.map((session) => `<tr><td>${escapeHtml(formatDateTime(session.started_at_utc))}</td><td>${escapeHtml(session.sync_source.replaceAll("_", " "))}</td><td>${Math.round(session.duration_seconds / 60)} min</td><td>${escapeHtml(session.requested_hz)} Hz</td><td>${session.estimated_hz ?? "—"} Hz</td><td><span class="pill ${statusClass(session.status)}">${escapeHtml(session.status)}</span></td></tr>`).join("") : `<tr><td colspan="6"><div class="empty-state"><span class="material-symbols-outlined">monitor_heart</span><h3>No sessions recorded</h3><p>Synced device sessions will appear here.</p></div></td></tr>`;
-  $$(".tab:not(.active)").forEach((tab) => tab.addEventListener("click", () => showToast(`${tab.textContent.trim()} view will be connected in the next portal module.`)));
+  $("#exit-patient")?.addEventListener("click", () => openPatientExit(auth, patient));
+  $("#edit-patient")?.addEventListener("click", () => openPatientEdit(auth, patient));
+  $("#replace-device")?.addEventListener("click", () => openDeviceAssignment(auth, patient.id, true));
+  $("#assign-device")?.addEventListener("click", () => openDeviceAssignment(auth, patient.id));
+  $$(".tab").forEach((tab) => tab.addEventListener("click", () => {
+    const destinations = { "Care plan": "care-plans.html", Schedule: "schedules.html", Sessions: "sessions.html", Device: "devices.html", "Audit history": "audit.html" };
+    if (destinations[tab.textContent.trim()]) location.href = destinations[tab.textContent.trim()];
+  }));
 }
 
 if (page === "login") initializeLogin(); else initializePortal();
