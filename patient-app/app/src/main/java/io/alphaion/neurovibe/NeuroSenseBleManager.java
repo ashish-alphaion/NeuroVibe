@@ -143,7 +143,7 @@ public final class NeuroSenseBleManager {
                 else { descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE); current.writeDescriptor(descriptor); }
             }
             String name = current.getDevice().getName();
-            main.post(() -> { listener.onConnectionChanged(true, name == null ? "NeuroSense" : name); sendType("get_info"); });
+            main.post(() -> listener.onConnectionChanged(true, name == null ? "NeuroSense" : name));
         }
 
         @Override public void onCharacteristicChanged(BluetoothGatt current, BluetoothGattCharacteristic characteristic, byte[] value) { consume(value); }

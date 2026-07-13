@@ -24,19 +24,63 @@ final class SupabaseAuthClient {
         void onError(String message);
     }
 
+    interface ProvisioningCallback {
+        void onSuccess(DeviceProvisioning provisioning);
+        void onError(String message);
+    }
+
     static final class PatientSession {
         final String accessToken;
         final String userId;
         final String patientId;
         final String fullName;
         final String patientCode;
+        final String assignmentId;
+        final String assignedDeviceId;
+        final String assignedDeviceName;
+        final String carePlanName;
+        final double minHz;
+        final double targetHz;
+        final double maxHz;
+        final int durationSeconds;
+        final int maxDurationSeconds;
+        final boolean manualControlAllowed;
 
-        PatientSession(String accessToken, String userId, String patientId, String fullName, String patientCode) {
+        PatientSession(String accessToken, String userId, String patientId, String fullName, String patientCode,
+                       String assignmentId, String assignedDeviceId, String assignedDeviceName,
+                       String carePlanName, double minHz, double targetHz, double maxHz,
+                       int durationSeconds, int maxDurationSeconds, boolean manualControlAllowed) {
             this.accessToken = accessToken;
             this.userId = userId;
             this.patientId = patientId;
             this.fullName = fullName;
             this.patientCode = patientCode;
+            this.assignmentId = assignmentId;
+            this.assignedDeviceId = assignedDeviceId;
+            this.assignedDeviceName = assignedDeviceName;
+            this.carePlanName = carePlanName;
+            this.minHz = minHz;
+            this.targetHz = targetHz;
+            this.maxHz = maxHz;
+            this.durationSeconds = durationSeconds;
+            this.maxDurationSeconds = maxDurationSeconds;
+            this.manualControlAllowed = manualControlAllowed;
+        }
+    }
+
+    static final class DeviceProvisioning {
+        final String apiBaseUrl;
+        final String apiToken;
+        final String patientId;
+        final String assignmentId;
+        final JSONObject carePlan;
+
+        DeviceProvisioning(JSONObject value) throws Exception {
+            apiBaseUrl = value.getString("api_base_url");
+            apiToken = value.getString("api_token");
+            patientId = value.getString("patient_id");
+            assignmentId = value.getString("assignment_id");
+            carePlan = value.optJSONObject("care_plan");
         }
     }
 
@@ -66,6 +110,18 @@ final class SupabaseAuthClient {
         });
     }
 
+    void provisionDevice(PatientSession session, String deviceId, ProvisioningCallback callback) {
+        executor.execute(() -> {
+            try {
+                JSONObject response = requestJson("POST", "https://neurovibeapi.netlify.app/api/device-provisioning",
+                        session.accessToken, new JSONObject().put("device_id", deviceId));
+                callback.onSuccess(new DeviceProvisioning(response));
+            } catch (Exception error) {
+                callback.onError(friendlyMessage(error));
+            }
+        });
+    }
+
     private PatientSession loadPatient(String token, String userId) throws Exception {
         String profileSelect = URLEncoder.encode("id,role,status", StandardCharsets.UTF_8.name());
         JSONArray profiles = requestArray("/rest/v1/profiles?select=" + profileSelect + "&id=eq." + userId, token);
@@ -74,11 +130,33 @@ final class SupabaseAuthClient {
         if (!"patient".equals(profile.optString("role"))) throw new Exception("This account is not a patient account.");
         if (!"active".equals(profile.optString("status"))) throw new Exception("This patient account is not active.");
 
-        String patientSelect = URLEncoder.encode("id,full_name,patient_code", StandardCharsets.UTF_8.name());
+        String patientSelect = URLEncoder.encode("id,full_name,patient_code,device_assignments(id,status,device_id,devices(id,display_name,lifecycle_status)),care_plans(id,name,status,min_hz,target_hz,max_hz,duration_seconds,max_duration_seconds,manual_control_allowed)", StandardCharsets.UTF_8.name());
         JSONArray patients = requestArray("/rest/v1/patients?select=" + patientSelect + "&user_id=eq." + userId, token);
         if (patients.length() != 1) throw new Exception("This login is not linked to a patient record.");
         JSONObject patient = patients.getJSONObject(0);
-        return new PatientSession(token, userId, patient.getString("id"), patient.getString("full_name"), patient.getString("patient_code"));
+        JSONObject assignment = findByStatus(patient.optJSONArray("device_assignments"), "active");
+        JSONObject plan = findByStatus(patient.optJSONArray("care_plans"), "active");
+        JSONObject device = assignment == null ? null : assignment.optJSONObject("devices");
+        return new PatientSession(token, userId, patient.getString("id"), patient.getString("full_name"), patient.getString("patient_code"),
+                assignment == null ? null : assignment.optString("id", null),
+                assignment == null ? null : assignment.optString("device_id", null),
+                device == null ? null : device.optString("display_name", null),
+                plan == null ? null : plan.optString("name", null),
+                plan == null ? 0 : plan.optDouble("min_hz", 0),
+                plan == null ? 0 : plan.optDouble("target_hz", 0),
+                plan == null ? 0 : plan.optDouble("max_hz", 0),
+                plan == null ? 0 : plan.optInt("duration_seconds", 0),
+                plan == null ? 0 : plan.optInt("max_duration_seconds", 0),
+                plan != null && plan.optBoolean("manual_control_allowed", false));
+    }
+
+    private JSONObject findByStatus(JSONArray values, String status) {
+        if (values == null) return null;
+        for (int index = 0; index < values.length(); index++) {
+            JSONObject value = values.optJSONObject(index);
+            if (value != null && status.equals(value.optString("status"))) return value;
+        }
+        return null;
     }
 
     private JSONArray requestArray(String path, String token) throws Exception {
@@ -90,7 +168,8 @@ final class SupabaseAuthClient {
     }
 
     private String request(String method, String path, String token, JSONObject body) throws Exception {
-        HttpURLConnection connection = (HttpURLConnection) new URL(SUPABASE_URL + path).openConnection();
+        String requestUrl = path.startsWith("https://") ? path : SUPABASE_URL + path;
+        HttpURLConnection connection = (HttpURLConnection) new URL(requestUrl).openConnection();
         connection.setRequestMethod(method);
         connection.setConnectTimeout(12_000);
         connection.setReadTimeout(12_000);

@@ -64,6 +64,15 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
     private TextView connectionLabel;
     private String connectedName = "Not connected";
     private boolean connected;
+    private boolean deviceVerified;
+    private String physicalDeviceId;
+    private SupabaseAuthClient.PatientSession patientSession;
+    private SupabaseAuthClient.DeviceProvisioning pendingProvisioning;
+    private boolean setupInProgress;
+    private boolean setupComplete;
+    private boolean wifiPromptShown;
+    private String savedWifiSsid = "";
+    private boolean identificationMode;
     private CountDownTimer sessionTimer;
     private int selectedHz = 85;
     private int remainingSeconds = 600;
@@ -122,7 +131,7 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
             if (enteredEmail.isEmpty() || enteredSecret.isEmpty()) { toast("Enter your email and password."); return; }
             continueButton.setEnabled(false); continueButton.setText("Signing in…");
             authClient.signIn(enteredEmail, enteredSecret, new SupabaseAuthClient.Callback() {
-                public void onSuccess(SupabaseAuthClient.PatientSession session) { runOnUiThread(() -> { applyPatientSession(session); requestAppPermissions(); showHome(); }); }
+                public void onSuccess(SupabaseAuthClient.PatientSession session) { runOnUiThread(() -> { applyPatientSession(session); requestAppPermissions(); routeAfterLogin(); }); }
                 public void onError(String message) { runOnUiThread(() -> { continueButton.setEnabled(true); continueButton.setText("Sign In"); toast(message); }); }
             });
         });
@@ -165,7 +174,7 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
             if (!value.equals(confirmation.getText().toString())) { toast("Passwords do not match."); return; }
             save.setEnabled(false); save.setText("Activating…");
             authClient.acceptInvitation(accessToken, value, new SupabaseAuthClient.Callback() {
-                public void onSuccess(SupabaseAuthClient.PatientSession session) { runOnUiThread(() -> { applyPatientSession(session); requestAppPermissions(); showHome(); }); }
+                public void onSuccess(SupabaseAuthClient.PatientSession session) { runOnUiThread(() -> { applyPatientSession(session); requestAppPermissions(); routeAfterLogin(); }); }
                 public void onError(String message) { runOnUiThread(() -> { save.setEnabled(true); save.setText("Activate account"); toast(message); }); }
             });
         });
@@ -173,8 +182,28 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
     }
 
     private void applyPatientSession(SupabaseAuthClient.PatientSession session) {
+        patientSession = session;
         patientName = session.fullName;
         patientCode = session.patientCode;
+        selectedHz = (int) Math.round(session.targetHz > 0 ? session.targetHz : 0);
+        remainingSeconds = session.durationSeconds;
+    }
+
+    private void routeAfterLogin() {
+        if (patientSession == null || patientSession.assignmentId == null || patientSession.assignedDeviceId == null) showAssignmentRequired();
+        else showConnect();
+    }
+
+    private void showAssignmentRequired() {
+        connected = false; deviceVerified = false;
+        LinearLayout page = page(false);
+        page.addView(title("Device assignment required", 28), margin(-1, -2, 0, 24, 0, 8));
+        page.addView(body(patientName + "'s account is working, but the clinic database has no NeuroSense device assigned to this patient.", 15), margin(-1, -2, 0, 0, 0, 22));
+        LinearLayout details = card(Color.WHITE); details.addView(title(patientName, 20)); details.addView(body("Patient code · " + patientCode, 14)); details.addView(body("Patient record · " + (patientSession == null ? "Unavailable" : patientSession.patientId), 12)); page.addView(details);
+        TextView steps = body("Doctor action required:\n1. Register the physical device ID in the portal.\n2. Assign it to this patient.\n3. Create an active care plan.\n4. Sign in again to refresh this app.", 15); steps.setBackground(round(SKY, 16)); steps.setPadding(dp(16),dp(16),dp(16),dp(16)); page.addView(steps, margin(-1,-2,0,18,0,0));
+        Button identify = outline("Identify nearby NeuroSense"); identify.setOnClickListener(v -> { identificationMode = true; showConnect(); }); page.addView(identify, margin(-1,54,0,18,0,0));
+        Button retry = primary("Sign in again after assignment"); retry.setOnClickListener(v -> showAccess(false)); page.addView(retry, margin(-1,54,0,18,0,0));
+        setScrollable(page);
     }
 
     @Override protected void onNewIntent(Intent intent) {
@@ -184,15 +213,17 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
     }
 
     private void showHome() {
+        if (patientSession == null || patientSession.assignmentId == null) { showAssignmentRequired(); return; }
         LinearLayout page = page(true); addHeader(page, "Welcome, " + patientName);
-        TextView intro = body("Your next prescribed session is ready.", 15); page.addView(intro, margin(-1, -2, 0, 2, 0, 22));
-        LinearLayout therapy = card(NAVY_CARD); TextView eyebrow = label("TODAY · MORNING THERAPY", 11); eyebrow.setTextColor(Color.rgb(142,205,255)); therapy.addView(eyebrow);
-        TextView plan = title("85 Hz · 10 minutes", 25); plan.setTextColor(Color.WHITE); therapy.addView(plan, margin(-1,-2,0,10,0,8));
-        TextView range = body("Doctor-approved range: 20–120 Hz", 14); range.setTextColor(Color.rgb(203,230,255)); therapy.addView(range);
-        Button start = accent("Start Session"); start.setOnClickListener(v -> { if (!connected) showConnect(); else startSession(); }); therapy.addView(start, margin(-1,50,0,22,0,0)); page.addView(therapy);
-        connectionLabel = label(connected ? "●  " + connectedName + " connected" : "○  NeuroSense not connected", 12); connectionLabel.setTextColor(connected ? GREEN : RED); connectionLabel.setOnClickListener(v -> showConnect()); page.addView(connectionLabel, margin(-1,-2,2,14,0,22));
-        page.addView(title("Today’s Progress", 20), margin(-1,-2,0,0,0,12));
-        LinearLayout metrics = row(); metrics.addView(metric("2 of 3", "Sessions", "✓"), weight()); metrics.addView(metric("67%", "Completed", "↗"), weightWithLeft()); page.addView(metrics);
+        boolean hasPlan = patientSession.carePlanName != null;
+        TextView intro = body(hasPlan ? "Your prescribed care plan is available." : "Your device is assigned, but your doctor has not created an active care plan.", 15); page.addView(intro, margin(-1, -2, 0, 2, 0, 22));
+        LinearLayout therapy = card(NAVY_CARD); TextView eyebrow = label(hasPlan ? patientSession.carePlanName.toUpperCase(Locale.US) : "CARE PLAN REQUIRED", 11); eyebrow.setTextColor(Color.rgb(142,205,255)); therapy.addView(eyebrow);
+        TextView plan = title(hasPlan ? formatHz(patientSession.targetHz) + " Hz · " + Math.round(patientSession.durationSeconds / 60.0) + " minutes" : "No active prescription", 25); plan.setTextColor(Color.WHITE); therapy.addView(plan, margin(-1,-2,0,10,0,8));
+        TextView range = body(hasPlan ? "Doctor-approved range: " + formatHz(patientSession.minHz) + "–" + formatHz(patientSession.maxHz) + " Hz" : "Ask your doctor to create a care plan before using vibration output.", 14); range.setTextColor(Color.rgb(203,230,255)); therapy.addView(range);
+        Button start = accent(deviceVerified && hasPlan ? "Start Session" : deviceVerified ? "Care plan required" : "Set up assigned device"); start.setEnabled(hasPlan); start.setOnClickListener(v -> { if (!deviceVerified) showConnect(); else startSession(); }); therapy.addView(start, margin(-1,50,0,22,0,0)); page.addView(therapy);
+        connectionLabel = label(deviceVerified ? "●  " + connectedName + " verified" : "○  Assigned NeuroSense not verified", 12); connectionLabel.setTextColor(deviceVerified ? GREEN : RED); connectionLabel.setOnClickListener(v -> showConnect()); page.addView(connectionLabel, margin(-1,-2,2,14,0,22));
+        page.addView(title("Assignment", 20), margin(-1,-2,0,0,0,12));
+        LinearLayout metrics = row(); metrics.addView(metric(patientSession.assignedDeviceName == null ? "Assigned" : patientSession.assignedDeviceName, "Device", "✓"), weight()); metrics.addView(metric(deviceVerified ? "Verified" : "Setup", "Status", deviceVerified ? "✓" : "!"), weightWithLeft()); page.addView(metrics);
         page.addView(title("Quick actions", 20), margin(-1,-2,0,26,0,12));
         LinearLayout actions = row(); Button device = outline("Connect device"); device.setOnClickListener(v -> showConnect()); actions.addView(device, weight()); Button symptoms = outline("Log symptoms"); symptoms.setOnClickListener(v -> symptomDialog()); actions.addView(symptoms, weightWithLeft()); page.addView(actions);
         setScrollable(page); addBottomNav("home");
@@ -200,28 +231,21 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
 
     private void showSchedule() {
         LinearLayout page = page(true); addHeader(page, "My Schedule");
-        page.addView(body("Sessions prescribed by your care team.", 15), margin(-1,-2,0,2,0,22));
-        page.addView(scheduleCard("TODAY · 10:00 AM", "Morning sensory protocol", "85 Hz · 10 min", true));
-        page.addView(scheduleCard("TOMORROW · 5:30 PM", "Evening vibration protocol", "110 Hz · 8 min", false), margin(-1,-2,0,14,0,0));
-        page.addView(scheduleCard("FRIDAY · 10:00 AM", "Morning sensory protocol", "85 Hz · 10 min", false), margin(-1,-2,0,14,0,0));
+        page.addView(body("No synchronized schedules are available yet. New sessions created by your doctor will appear after the next account refresh.", 15), margin(-1,-2,0,2,0,22));
         setScrollable(page); addBottomNav("schedule");
     }
 
     private void showHistory() {
         LinearLayout page = page(true); addHeader(page, "Session History");
-        page.addView(body("Your synchronized NeuroSense sessions.", 15), margin(-1,-2,0,2,0,22));
-        page.addView(metric("4", "Completed this week", "✓"));
-        page.addView(historyCard("Yesterday · 10:00 AM", "85 Hz", "10 min", "Completed"), margin(-1,-2,0,18,0,0));
-        page.addView(historyCard("12 July · 5:30 PM", "110 Hz", "8 min", "Completed"), margin(-1,-2,0,12,0,0));
-        page.addView(historyCard("11 July · 10:00 AM", "90 Hz", "5 min", "Stopped early"), margin(-1,-2,0,12,0,0));
+        page.addView(body("No synchronized session history is available yet. Completed device sessions will appear after Wi-Fi synchronization.", 15), margin(-1,-2,0,2,0,22));
         setScrollable(page); addBottomNav("history");
     }
 
     private void showMore() {
         LinearLayout page = page(true); addHeader(page, "My NeuroVibe");
         LinearLayout profile = card(Color.WHITE); profile.addView(title(patientName, 22)); profile.addView(body("Patient ID · " + patientCode, 13)); page.addView(profile);
-        page.addView(menuButton("NeuroSense device", connected ? connectedName : "Connect your assigned device", this::showConnect), margin(-1,-2,0,16,0,0));
-        page.addView(menuButton("Care plan", "Morning sensory protocol · 20–120 Hz", () -> carePlanDialog()), margin(-1,-2,0,12,0,0));
+        page.addView(menuButton("NeuroSense device", patientSession == null || patientSession.assignedDeviceId == null ? "No database assignment" : (deviceVerified ? connectedName + " verified" : patientSession.assignedDeviceName + " · setup required"), this::showConnect), margin(-1,-2,0,16,0,0));
+        page.addView(menuButton("Care plan", patientSession == null || patientSession.carePlanName == null ? "No active care plan" : patientSession.carePlanName + " · " + formatHz(patientSession.minHz) + "–" + formatHz(patientSession.maxHz) + " Hz", () -> carePlanDialog()), margin(-1,-2,0,12,0,0));
         page.addView(menuButton("Wi-Fi setup", "Send Wi-Fi details securely over Bluetooth", this::wifiDialog), margin(-1,-2,0,12,0,0));
         page.addView(menuButton("Help and safety", "Emergency guidance and support", this::helpDialog), margin(-1,-2,0,12,0,0));
         Button signOut = outline("Sign out"); signOut.setOnClickListener(v -> showWelcome()); page.addView(signOut, margin(-1,52,0,22,0,0));
@@ -230,15 +254,17 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
 
     @SuppressLint("MissingPermission")
     private void showConnect() {
+        boolean hasAssignment = patientSession != null && patientSession.assignedDeviceId != null;
+        if (!hasAssignment && !identificationMode) { showAssignmentRequired(); return; }
         LinearLayout page = page(false);
-        Button back = textButton("‹ Back to home"); back.setOnClickListener(v -> showHome()); page.addView(back, wrap());
-        page.addView(title("Connect NeuroSense", 28), margin(-1,-2,0,20,0,8));
-        page.addView(body("Turn on the assigned device and keep it close to this phone.", 15), margin(-1,-2,0,0,0,20));
-        TextView status = label(connected ? "● CONNECTED · " + connectedName : "BLUETOOTH DEVICE SCAN", 12); status.setTextColor(connected ? GREEN : BLUE); page.addView(status);
+        if (deviceVerified) { Button back = textButton("‹ Back to dashboard"); back.setOnClickListener(v -> showHome()); page.addView(back, wrap()); }
+        page.addView(title(hasAssignment ? "Set up assigned NeuroSense" : "Identify NeuroSense", 28), margin(-1,-2,0,20,0,8));
+        page.addView(body(hasAssignment ? "Assigned by your clinic: " + (patientSession.assignedDeviceName == null ? "NeuroSense" : patientSession.assignedDeviceName) + "\nDevice ID: " + patientSession.assignedDeviceId : "Connect the nearby device only to read its hardware ID. Vibration output remains locked until a doctor registers and assigns it.", 15), margin(-1,-2,0,0,0,20));
+        TextView status = label(deviceVerified ? "● VERIFIED · " + connectedName : connected ? "● CONNECTED · VERIFYING DATABASE ID" : "BLUETOOTH DEVICE SCAN", 12); status.setTextColor(deviceVerified ? GREEN : BLUE); page.addView(status);
         Button scan = primary(connected ? "Scan for another device" : "Find NeuroSense"); scan.setOnClickListener(v -> requestBleAndScan()); page.addView(scan, margin(-1,52,0,14,0,18));
         deviceList = column(Gravity.CENTER_HORIZONTAL, 10); page.addView(deviceList);
         if (connected) {
-            LinearLayout connectedCard = card(Color.WHITE); connectedCard.addView(title(connectedName, 20)); connectedCard.addView(body("Ready for prescribed sessions", 13));
+            LinearLayout connectedCard = card(Color.WHITE); connectedCard.addView(title(connectedName, 20)); connectedCard.addView(body(deviceVerified ? "Identity verified against " + patientName + "'s assignment" : physicalDeviceId == null ? "Waiting for the device identity response" : "Device ID · " + physicalDeviceId, 13));
             Button info = outline("Refresh device status"); info.setOnClickListener(v -> ble.sendType("get_status")); connectedCard.addView(info, margin(-1,48,0,14,0,0)); deviceList.addView(connectedCard);
         } else deviceList.addView(body("No scan started yet.", 14));
         setScrollable(page);
@@ -273,22 +299,26 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
     }
 
     private void startSession() {
-        try { ble.send(new JSONObject().put("type", "start_session").put("target_hz", selectedHz).put("duration_seconds", 600)); }
+        if (!deviceVerified || patientSession == null || patientSession.carePlanName == null) { toast("Complete device setup and wait for an active care plan."); showConnect(); return; }
+        try { ble.send(new JSONObject().put("type", "start_session").put("target_hz", selectedHz).put("duration_seconds", patientSession.durationSeconds)); }
         catch (Exception error) { toast(error.getMessage()); }
         showActiveSession();
     }
 
     private void showActiveSession() {
-        if (sessionTimer != null) sessionTimer.cancel(); remainingSeconds = 600;
+        int sessionDuration = patientSession == null ? 0 : patientSession.durationSeconds;
+        if (sessionDuration <= 0) { toast("The care plan duration is invalid."); showHome(); return; }
+        if (sessionTimer != null) sessionTimer.cancel(); remainingSeconds = sessionDuration;
         LinearLayout page = page(false); addHeader(page, "Active Session");
         TextView status = label("● BLUETOOTH CONNECTED", 11); status.setTextColor(GREEN); status.setGravity(Gravity.CENTER); page.addView(status);
-        ProgressBar progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal); progress.setMax(600); progress.setProgress(0); page.addView(progress, margin(-1,8,0,16,0,26));
-        TextView timer = title("10:00", 48); timer.setGravity(Gravity.CENTER); page.addView(timer);
+        ProgressBar progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal); progress.setMax(sessionDuration); progress.setProgress(0); page.addView(progress, margin(-1,8,0,16,0,26));
+        TextView timer = title(String.format(Locale.US, "%02d:%02d", sessionDuration / 60, sessionDuration % 60), 48); timer.setGravity(Gravity.CENTER); page.addView(timer);
         TextView frequency = title(selectedHz + "\nHz", 52); frequency.setGravity(Gravity.CENTER); frequency.setTextColor(NAVY); frequency.setBackground(round(Color.WHITE, 100)); page.addView(frequency, margin(dp(190),dp(190),0,22,0,24));
-        LinearLayout controls = card(Color.WHITE); controls.addView(title("Frequency", 20)); controls.addView(body("Doctor-approved range · 20–120 Hz", 12));
-        SeekBar slider = new SeekBar(this); slider.setMax(100); slider.setProgress(selectedHz - 20); controls.addView(slider, margin(-1,44,0,18,0,0));
+        int minimumHz = (int)Math.ceil(patientSession.minHz); int maximumHz = (int)Math.floor(patientSession.maxHz);
+        LinearLayout controls = card(Color.WHITE); controls.addView(title("Frequency", 20)); controls.addView(body("Doctor-approved range · " + minimumHz + "–" + maximumHz + " Hz", 12));
+        SeekBar slider = new SeekBar(this); slider.setMax(Math.max(maximumHz - minimumHz, 0)); slider.setProgress(Math.max(0, selectedHz - minimumHz)); slider.setEnabled(patientSession.manualControlAllowed); controls.addView(slider, margin(-1,44,0,18,0,0));
         slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(SeekBar bar, int value, boolean user) { selectedHz = value + 20; frequency.setText(selectedHz + "\nHz"); }
+            public void onProgressChanged(SeekBar bar, int value, boolean user) { selectedHz = value + minimumHz; frequency.setText(selectedHz + "\nHz"); }
             public void onStartTrackingTouch(SeekBar bar) {}
             public void onStopTrackingTouch(SeekBar bar) { try { ble.send(new JSONObject().put("type", "set_frequency").put("hz", selectedHz)); } catch (Exception e) { toast(e.getMessage()); } }
         });
@@ -296,8 +326,8 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
         Button emergency = danger("⚠  EMERGENCY STOP"); emergency.setOnClickListener(v -> confirmStop(true)); page.addView(emergency, margin(-1,58,0,22,0,8));
         TextView safety = body("Emergency stop immediately terminates all vibration output.", 12); safety.setGravity(Gravity.CENTER); page.addView(safety);
         setScrollable(page);
-        sessionTimer = new CountDownTimer(600_000, 1000) {
-            public void onTick(long millis) { remainingSeconds = (int)(millis / 1000); timer.setText(String.format(Locale.US, "%02d:%02d", remainingSeconds / 60, remainingSeconds % 60)); progress.setProgress(600 - remainingSeconds); }
+        sessionTimer = new CountDownTimer(sessionDuration * 1000L, 1000) {
+            public void onTick(long millis) { remainingSeconds = (int)(millis / 1000); timer.setText(String.format(Locale.US, "%02d:%02d", remainingSeconds / 60, remainingSeconds % 60)); progress.setProgress(sessionDuration - remainingSeconds); }
             public void onFinish() { showCompletion(false); }
         }.start();
     }
@@ -324,23 +354,127 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
     }
 
     @Override public void onConnectionChanged(boolean isConnected, String name) {
-        connected = isConnected; connectedName = isConnected ? name : "Not connected"; toast(isConnected ? name + " connected" : name); if (isConnected) showHome();
+        connected = isConnected;
+        connectedName = isConnected ? name : "Not connected";
+        if (!isConnected) { deviceVerified = false; setupInProgress = false; setupComplete = false; }
+        toast(isConnected ? name + " connected. Verifying assignment…" : name);
+        if (isConnected) { showConnect(); ble.sendType("get_status"); }
     }
 
     @Override public void onMessage(String json) {
-        try { JSONObject message = new JSONObject(json); if ("error".equals(message.optString("type"))) toast(message.optString("message", "Device rejected the command.")); }
+        try {
+            JSONObject message = new JSONObject(json);
+            String type = message.optString("type");
+            if ("error".equals(type)) { setupInProgress = false; toast(message.optString("message", "Device rejected the command.")); return; }
+            if ("status".equals(type)) { handleDeviceStatus(message); return; }
+            if ("ok".equals(type)) { handleDeviceCommandAccepted(message.optString("command")); return; }
+            if ("wifi_result".equals(type)) {
+                boolean online = message.optBoolean("connected", false);
+                setupComplete = online;
+                setupInProgress = false;
+                if (online) { toast("NeuroSense is configured and connected to Wi-Fi."); showHome(); }
+                else { toast("Wi-Fi connection failed. Check the network name and password."); wifiPromptShown = false; wifiDialog(); }
+            }
+        }
         catch (Exception ignored) { }
     }
     @Override public void onError(String message) { toast(message); }
 
+    private void handleDeviceStatus(JSONObject status) {
+        physicalDeviceId = status.optString("device_id", "");
+        savedWifiSsid = status.optString("wifi_ssid", "");
+        if (patientSession == null || patientSession.assignedDeviceId == null) {
+            identificationMode = true;
+            setupInProgress = false;
+            new AlertDialog.Builder(this).setTitle("NeuroSense identified")
+                    .setMessage("Physical device ID:\n" + physicalDeviceId + "\n\nRegister this exact ID in the doctor portal and assign it to patient " + patientCode + ".")
+                    .setPositiveButton("Done", null).show();
+            showConnect();
+            return;
+        }
+        if (!patientSession.assignedDeviceId.equals(physicalDeviceId)) {
+            deviceVerified = false;
+            String expected = patientSession.assignedDeviceId;
+            new AlertDialog.Builder(this).setTitle("Wrong NeuroSense device")
+                    .setMessage("Connected device ID:\n" + physicalDeviceId + "\n\nAssigned device ID:\n" + expected + "\n\nAsk the doctor to register/assign the connected ID, or connect the assigned device.")
+                    .setPositiveButton("Disconnect", (d,w) -> ble.disconnect()).show();
+            return;
+        }
+        deviceVerified = true;
+        if (setupComplete || setupInProgress) return;
+        setupInProgress = true;
+        boolean apiConfigured = status.optBoolean("api_configured", false);
+        if (!apiConfigured) requestSecureProvisioning();
+        else sendAssignmentConfiguration();
+    }
+
+    private void requestSecureProvisioning() {
+        authClient.provisionDevice(patientSession, physicalDeviceId, new SupabaseAuthClient.ProvisioningCallback() {
+            public void onSuccess(SupabaseAuthClient.DeviceProvisioning provisioning) { runOnUiThread(() -> {
+                pendingProvisioning = provisioning;
+                try { ble.send(new JSONObject().put("type", "set_server").put("api_base_url", provisioning.apiBaseUrl).put("api_token", provisioning.apiToken)); }
+                catch (Exception error) { setupInProgress = false; toast(error.getMessage()); }
+            }); }
+            public void onError(String message) { runOnUiThread(() -> { setupInProgress = false; toast(message); showConnect(); }); }
+        });
+    }
+
+    private void handleDeviceCommandAccepted(String command) {
+        if ("set_server".equals(command)) { sendAssignmentConfiguration(); return; }
+        if ("set_assignment".equals(command)) { sendCarePlanConfiguration(); return; }
+        if ("set_limits".equals(command)) { finishConfigurationWithWifi(); return; }
+        if ("set_wifi".equals(command)) { toast("Wi-Fi saved. NeuroSense is connecting…"); return; }
+    }
+
+    private void sendAssignmentConfiguration() {
+        try { ble.send(new JSONObject().put("type", "set_assignment").put("patient_id", patientSession.patientId).put("assignment_id", patientSession.assignmentId)); }
+        catch (Exception error) { setupInProgress = false; toast(error.getMessage()); }
+    }
+
+    private void sendCarePlanConfiguration() {
+        if (patientSession.carePlanName == null) {
+            setupInProgress = false;
+            toast("Device assignment saved, but an active care plan is still required.");
+            showHome();
+            return;
+        }
+        try {
+            ble.send(new JSONObject().put("type", "set_limits")
+                    .put("min_hz", patientSession.minHz).put("target_hz", patientSession.targetHz).put("max_hz", patientSession.maxHz)
+                    .put("max_duration_seconds", patientSession.maxDurationSeconds).put("manual_control_allowed", patientSession.manualControlAllowed));
+        } catch (Exception error) { setupInProgress = false; toast(error.getMessage()); }
+    }
+
+    private void finishConfigurationWithWifi() {
+        setupInProgress = false;
+        if (savedWifiSsid.isEmpty()) { wifiPromptShown = false; wifiDialog(); }
+        else { setupComplete = true; toast("Assignment and care plan synchronized."); showHome(); }
+    }
+
     private void wifiDialog() {
-        if (!connected) { showConnect(); return; }
-        LinearLayout form = column(Gravity.CENTER_HORIZONTAL, 10); EditText ssid = input("Wi-Fi name"); EditText password = input("Wi-Fi password"); password.setInputType(0x81); form.addView(ssid); form.addView(password);
-        new AlertDialog.Builder(this).setTitle("Configure device Wi-Fi").setView(form).setNegativeButton("Cancel", null).setPositiveButton("Send", (d,w) -> { try { ble.send(new JSONObject().put("type","set_wifi").put("ssid",ssid.getText().toString()).put("password",password.getText().toString())); toast("Wi-Fi details sent to NeuroSense."); } catch(Exception e){toast(e.getMessage());} }).show();
+        if (!connected || !deviceVerified) { showConnect(); return; }
+        if (wifiPromptShown) return;
+        wifiPromptShown = true;
+        LinearLayout form = column(Gravity.CENTER_HORIZONTAL, 10); EditText ssid = input("Wi-Fi network name"); ssid.setText(savedWifiSsid); EditText password = input("Wi-Fi password"); password.setInputType(0x81); form.addView(ssid); form.addView(password);
+        new AlertDialog.Builder(this).setTitle("Connect NeuroSense to Wi-Fi")
+                .setMessage("These details are sent directly to the verified assigned device over Bluetooth and saved on the ESP32.")
+                .setView(form).setOnCancelListener(d -> wifiPromptShown = false)
+                .setNegativeButton("Later", (d,w) -> { wifiPromptShown = false; showHome(); })
+                .setPositiveButton("Connect", (d,w) -> {
+                    String network = ssid.getText().toString().trim();
+                    if (network.isEmpty()) { wifiPromptShown = false; toast("Enter the Wi-Fi network name."); return; }
+                    try { savedWifiSsid = network; ble.send(new JSONObject().put("type","set_wifi").put("ssid",network).put("password",password.getText().toString())); }
+                    catch(Exception e){wifiPromptShown = false;toast(e.getMessage());}
+                }).show();
     }
 
     private void symptomDialog() { final String[] items={"Comfortable","Tingling","Tired","Dizzy","Pain or discomfort"}; new AlertDialog.Builder(this).setTitle("How are you feeling?").setSingleChoiceItems(items,0,null).setNegativeButton("Cancel",null).setPositiveButton("Save",(d,w)->toast("Symptom note saved on this prototype.")).show(); }
-    private void carePlanDialog() { new AlertDialog.Builder(this).setTitle("Morning sensory protocol").setMessage("Target: 85 Hz\nAllowed range: 20–120 Hz\nDuration: 10 minutes\n\nOnly your care team can change these limits.").setPositiveButton("Done",null).show(); }
+    private void carePlanDialog() {
+        if (patientSession == null || patientSession.carePlanName == null) { toast("No active care plan is assigned."); return; }
+        new AlertDialog.Builder(this).setTitle(patientSession.carePlanName)
+                .setMessage("Target: " + formatHz(patientSession.targetHz) + " Hz\nAllowed range: " + formatHz(patientSession.minHz) + "–" + formatHz(patientSession.maxHz) + " Hz\nDuration: " + Math.round(patientSession.durationSeconds / 60.0) + " minutes\nManual adjustment: " + (patientSession.manualControlAllowed ? "Allowed" : "Locked") + "\n\nOnly your care team can change these limits.")
+                .setPositiveButton("Done",null).show();
+    }
     private void helpDialog() { new AlertDialog.Builder(this).setTitle("NeuroVibe help and safety").setMessage("Use only the device assigned to you. Stop immediately if you feel pain, dizziness, numbness, or unusual discomfort. This prototype is not a substitute for medical advice. Contact your care team for clinical questions.").setPositiveButton("Understood",null).show(); }
 
     private void createNotificationChannel() {
@@ -359,13 +493,13 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
         Notification notification = new Notification.Builder(this, "therapy_reminders")
                 .setSmallIcon(io.alphaion.neurovibe.R.drawable.ic_neurovibe)
                 .setContentTitle("NeuroVibe session ready")
-                .setContentText("Your fictional 85 Hz demo session is ready to begin.")
+                .setContentText(patientSession != null && patientSession.carePlanName != null ? patientSession.carePlanName + " is ready." : "Open NeuroVibe to review your care plan.")
                 .setContentIntent(pending).setAutoCancel(true).build();
         getSystemService(NotificationManager.class).notify(1001, notification);
     }
 
     private void addHeader(LinearLayout page, String heading) {
-        LinearLayout header = row(); TextView brand = brandTitle(21); header.addView(brand, weight()); TextView badge = label(connected ? "● CONNECTED" : "○ OFFLINE", 10); badge.setTextColor(connected ? GREEN : MUTED); badge.setGravity(Gravity.CENTER); header.addView(badge, new LinearLayout.LayoutParams(dp(105), dp(40))); page.addView(header); page.addView(title(heading, 28), margin(-1,-2,0,24,0,0));
+        LinearLayout header = row(); TextView brand = brandTitle(21); header.addView(brand, weight()); TextView badge = label(deviceVerified ? "● VERIFIED" : "○ NOT READY", 10); badge.setTextColor(deviceVerified ? GREEN : MUTED); badge.setGravity(Gravity.CENTER); header.addView(badge, new LinearLayout.LayoutParams(dp(105), dp(40))); page.addView(header); page.addView(title(heading, 28), margin(-1,-2,0,24,0,0));
     }
 
     private void addBottomNav(String active) {
@@ -401,6 +535,7 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
     private LinearLayout.LayoutParams weightWithLeft(){LinearLayout.LayoutParams p=weight();p.leftMargin=dp(10);return p;}
     private FrameLayout.LayoutParams match(){return new FrameLayout.LayoutParams(-1,-1);}
     private void setScrollable(LinearLayout page){root.removeAllViews();ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.addView(page,new ScrollView.LayoutParams(-1,-2));root.addView(scroll,match());}
+    private String formatHz(double value){return Math.abs(value-Math.rint(value))<0.001?String.valueOf((int)Math.rint(value)):String.format(Locale.US,"%.1f",value);}
     private int dp(int value){return Math.round(value*getResources().getDisplayMetrics().density);}
     private void toast(String message){Toast.makeText(this,message,Toast.LENGTH_LONG).show();}
 

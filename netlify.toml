@@ -30,6 +30,12 @@
   force = true
 
 [[redirects]]
+  from = "/api/device-provisioning"
+  to = "/.netlify/functions/device-provisioning"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/gateway"
   to = "/gateway/index.html"
   status = 200
