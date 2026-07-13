@@ -37,17 +37,17 @@
 <body>
   <main>
     <header>
-      <div class="brand"><div class="logo">NV</div><div><h1>NeuroVibe Gateway</h1><span class="muted">Temporary prototype data service</span></div></div>
+      <div class="brand"><div class="logo">NV</div><div><h1>NeuroVibe Gateway</h1><span class="muted">Netlify API and Supabase data service</span></div></div>
       <div><span class="pill">neurovibeapi.netlify.app</span> <span class="pill" id="badge">Checking API...</span></div>
     </header>
 
     <section class="hero">
       <h2>One HTTPS contact point for the device, patient app and doctor portal.</h2>
-      <p class="muted">This page is the gateway dashboard. Actual data is accepted by protected server-side API functions and stored temporarily in Netlify Blobs.</p>
+      <p class="muted">This page is the gateway dashboard. Data is validated by protected Netlify Functions and stored in Supabase PostgreSQL.</p>
       <div class="flow" aria-label="System data flow">
         <div class="node">NeuroSense ESP32-C3<br>NeuroVibe app</div><div class="arrow">&rarr;</div>
         <div class="node"><strong>Netlify API</strong><br><code>/api/therapy-sessions</code></div><div class="arrow">&rarr;</div>
-        <div class="node">Temporary storage<br>Doctor portal</div>
+        <div class="node">Supabase PostgreSQL<br>Doctor portal</div>
       </div>
       <button id="check" type="button">Check gateway</button>
       <div id="result" role="status" aria-live="polite">Waiting for status check...</div>
@@ -57,7 +57,7 @@
       <article class="card"><h2>Device and app upload</h2><p class="muted">Send JSON with a bearer token using:</p><code>POST <span class="origin"></span>/api/therapy-sessions</code></article>
       <article class="card"><h2>Doctor portal fetch</h2><p class="muted">Retrieve the latest prototype records with a separate doctor token:</p><code>GET <span class="origin"></span>/api/therapy-sessions</code></article>
       <article class="card"><h2>Storage protection</h2><p class="muted">Database access and API secrets remain in server-side environment variables. They are never included in this HTML page.</p></article>
-      <article class="card"><h2>Prototype limitation</h2><p class="muted">Use fabricated patient data only. Replace temporary Blob storage with PostgreSQL before clinical or production operation.</p></article>
+      <article class="card"><h2>Prototype limitation</h2><p class="muted">Use fabricated patient data only until authentication, recovery, retention and clinical security requirements have been formally verified.</p></article>
     </section>
     <footer>NeuroVibe prototype infrastructure &middot; Frequency records are validated to the 0-230 Hz range.</footer>
   </main>

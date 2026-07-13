@@ -41,9 +41,17 @@ function secureEquals(actual, expected) {
 }
 
 export function hasBearerToken(request, expected) {
-  const header = request.headers.get("authorization") ?? "";
-  const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+  const token = getBearerToken(request);
   return Boolean(expected) && secureEquals(token, expected);
+}
+
+export function getBearerToken(request) {
+  const header = request.headers.get("authorization") ?? "";
+  return header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+}
+
+export function secureTokenEquals(actual, expected) {
+  return Boolean(expected) && secureEquals(actual, expected);
 }
 
 export async function readSmallJson(request, maxBytes = 32_768) {

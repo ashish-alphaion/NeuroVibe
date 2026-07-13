@@ -1,4 +1,3 @@
-import { getStore } from "@netlify/blobs";
 import {
   ApiError,
   hasBearerToken,
@@ -7,8 +6,7 @@ import {
   readSmallJson,
   requireSessionFields,
 } from "./_shared.mjs";
-
-const STORE_NAME = "neurovibe-therapy-sessions";
+import { getSupabaseAdmin, verifyDeviceRequest } from "./_supabase.mjs";
 
 export default async (request) => {
   if (request.method === "OPTIONS") return options(request);
@@ -27,32 +25,34 @@ export default async (request) => {
 };
 
 async function uploadSession(request) {
-  if (!hasBearerToken(request, process.env.DEVICE_API_TOKEN)) {
-    throw new ApiError(401, "unauthorized", "A valid device bearer token is required.");
-  }
-
   const body = await readSmallJson(request);
   requireSessionFields(body);
+  if (!(await verifyDeviceRequest(request, String(body.device_id)))) {
+    throw new ApiError(401, "unauthorized", "A valid device bearer token is required.");
+  }
 
   const record = {
     ...body,
     requested_hz: Number(body.requested_hz),
     pwm_value: Number(body.pwm_value),
     duration_seconds: Number(body.duration_seconds),
-    received_at_utc: new Date().toISOString(),
   };
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.rpc("ingest_therapy_session", { payload: record });
+  if (error) {
+    if (error.message.includes("invalid_assignment")) {
+      throw new ApiError(409, "invalid_assignment", "The active device assignment does not match this session.");
+    }
+    if (error.message.includes("device_sequence_conflict")) {
+      throw new ApiError(409, "device_sequence_conflict", "The device sequence has already been used by another session.");
+    }
+    console.error("Supabase session ingest failed", { code: error.code, message: error.message });
+    throw new ApiError(500, "database_error", "The session could not be stored.");
+  }
 
-  // Each session gets its own immutable key. Retries are idempotent and devices
-  // cannot overwrite another session or a previously accepted version.
-  const store = getStore({ name: STORE_NAME, consistency: "strong" });
-  const key = `sessions/${body.device_id}/${body.session_id}`;
-  const result = await store.setJSON(key, record, {
-    onlyIfNew: true,
-    metadata: { device_id: String(body.device_id), patient_id: String(body.patient_id) },
-  });
-
-  return json(request, result.modified ? 201 : 200, {
-    status: result.modified ? "accepted" : "already_accepted",
+  const status = data?.status ?? "accepted";
+  return json(request, status === "accepted" ? 201 : 200, {
+    status,
     acknowledged: true,
     session_id: body.session_id,
   });
@@ -63,13 +63,15 @@ async function listSessions(request) {
     throw new ApiError(401, "unauthorized", "A valid doctor bearer token is required.");
   }
 
-  const store = getStore({ name: STORE_NAME, consistency: "strong" });
-  const { blobs } = await store.list({ prefix: "sessions/" });
-  const selected = blobs.slice(-100);
-  const sessions = (await Promise.all(
-    selected.map(({ key }) => store.get(key, { type: "json", consistency: "strong" })),
-  )).filter(Boolean);
-
-  sessions.sort((a, b) => String(b.received_at_utc).localeCompare(String(a.received_at_utc)));
+  const supabase = getSupabaseAdmin();
+  const { data: sessions, error } = await supabase
+    .from("therapy_sessions")
+    .select("*")
+    .order("started_at_utc", { ascending: false })
+    .limit(100);
+  if (error) {
+    console.error("Supabase session list failed", { code: error.code, message: error.message });
+    throw new ApiError(500, "database_error", "Sessions could not be retrieved.");
+  }
   return json(request, 200, { sessions, count: sessions.length, limited_to: 100 });
 }

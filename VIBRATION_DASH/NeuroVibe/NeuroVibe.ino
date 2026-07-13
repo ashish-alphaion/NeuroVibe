@@ -25,6 +25,7 @@
 #include <LittleFS.h>
 #include <Preferences.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <time.h>
 
 // -----------------------------------------------------------------------------
@@ -45,6 +46,41 @@ constexpr float SYSTEM_MAX_HZ = 230.0f;
 constexpr float CALIBRATION_MIN_RUNNING_HZ = 60.0f;
 constexpr int PWM_AT_MIN_RUNNING_HZ = 70;
 constexpr int PWM_AT_MAX_RUNNING_HZ = 255;
+constexpr char FIRMWARE_VERSION[] = "0.2.0-supabase";
+constexpr char DEFAULT_API_BASE_URL[] = "https://neurovibeapi.netlify.app";
+
+// Netlify currently serves a Let's Encrypt chain rooted at ISRG Root X1.
+// Replace this CA in a firmware update before its 2035 expiry, or move to an
+// embedded maintained CA bundle. Never use setInsecure() for patient data.
+static const char ISRG_ROOT_X1[] PROGMEM = R"CERT(
+-----BEGIN CERTIFICATE-----
+MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAwTzELMAkGA1UE
+BhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2VhcmNoIEdyb3VwMRUwEwYDVQQD
+EwxJU1JHIFJvb3QgWDEwHhcNMTUwNjA0MTEwNDM4WhcNMzUwNjA0MTEwNDM4WjBPMQswCQYDVQQG
+EwJVUzEpMCcGA1UEChMgSW50ZXJuZXQgU2VjdXJpdHkgUmVzZWFyY2ggR3JvdXAxFTATBgNVBAMT
+DElTUkcgUm9vdCBYMTCCAiIwDQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIBAK3oJHP0FDfzm54r
+Vygch77ct984kIxuPOZXoHj3dcKi/vVqbvYATyjb3miGbESTtrFj/RQSa78f0uoxmyF+0TM8ukj1
+3Xnfs7j/EvEhmkvBioZxaUpmZmyPfjxwv60pIgbz5MDmgK7iS4+3mX6UA5/TR5d8mUgjU+g4rk8K
+b4Mu0UlXjIB0ttov0DiNewNwIRt18jA8+o+u3dpjq+sWT8KOEUt+zwvo/7V3LvSye0rgTBIlDHCN
+Aymg4VMk7BPZ7hm/ELNKjD+Jo2FR3qyHB5T0Y3HsLuJvW5iB4YlcNHlsdu87kGJ55tukmi8mxdAQ
+4Q7e2RCOFvu396j3x+UCB5iPNgiV5+I3lg02dZ77DnKxHZu8A/lJBdiB3QW0KtZB6awBdpUKD9jf
+1b0SHzUvKBds0pjBqAlkd25HN7rOrFleaJ1/ctaJxQZBKT5ZPt0m9STJEadao0xAH0ahmbWnOlFu
+hjuefXKnEgV4We0+UXgVCwOPjdAvBbI+e0ocS3MFEvzG6uBQE3xDk3SzynTnjh8BCNAw1FtxNrQH
+usEwMFxIt4I7mKZ9YIqioymCzLq9gwQbooMDQaHWBfEbwrbwqHyGO0aoSCqI3Haadr8faqU9GY/r
+OPNk3sgrDQoo//fb4hVC1CLQJ13hef4Y53CIrU7m2Ys6xt0nUW7/vGT1M0NPAgMBAAGjQjBAMA4G
+A1UdDwEB/wQEAwIBBjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBR5tFnme7bl5AFzgAiIyBpY
+9umbbjANBgkqhkiG9w0BAQsFAAOCAgEAVR9YqbyyqFDQDLHYGmkgJykIrGF1XIpu+ILlaS/V9lZL
+ubhzEFnTIZd+50xx+7LSYK05qAvqFyFWhfFQDlnrzuBZ6brJFe+GnY+EgPbk6ZGQ3BebYhtF8GaV
+0nxvwuo77x/Py9auJ/GpsMiu/X1+mvoiBOv/2X/qkSsisRcOj/KKNFtY2PwByVS5uCbMiogziUwt
+hDyC3+6WVwW6LLv3xLfHTjuCvjHIInNzktHCgKQ5ORAzI4JMPJ+GslWYHb4phowim57iaztXOoJw
+TdwJx4nLCgdNbOhdjsnvzqvHu7UrTkXWStAmzOVyyghqpZXjFaH3pO3JLF+l+/+sKAIuvtd7u+Nx
+e5AW0wdeRlN8NwdCjNPElpzVmbUq4JUagEiuTDkHzsxHpFKVK7q4+63SM1N95R1NbdWhscdCb+ZA
+JzVcoyi3B43njTOQ5yOf+1CceWxG1bQVs5ZufpsMljq4Ui0/1lvh+wjChP4kqKOJ2qxq4RgqsahD
+YVvTH9w7jXbyLeiNdd8XM2w9U/t7y0Ff/9yi0GE44Za4rF2LN9d11TPAmRGunUHBcnWEvgJBQl9n
+JEiU0Zsnvgc/ubhPgXRR4Xq37Z0j4r7g1SgEEzwxA57demyPxgcYxn/eR44/KJ4EBs+lVDR3veyJ
+m+kXQ99b21/+jh5Xos1AnX5iItreGCc=
+-----END CERTIFICATE-----
+)CERT";
 
 // -----------------------------------------------------------------------------
 // BLE protocol
@@ -66,6 +102,7 @@ bool stopAfterBleDisconnect = false;
 bool pendingTransferRequested = false;
 bool wifiConnectRequested = false;
 bool syncRequested = false;
+bool storageFault = false;
 
 // -----------------------------------------------------------------------------
 // Persistent configuration
@@ -118,6 +155,8 @@ constexpr char QUEUE_TEMP_FILE[] = "/session_queue.tmp";
 constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 12000;
 constexpr uint32_t WIFI_RETRY_INTERVAL_MS = 30000;
 constexpr uint32_t SYNC_INTERVAL_MS = 15000;
+constexpr uint32_t NTP_SYNC_TIMEOUT_MS = 8000;
+constexpr uint32_t MAX_QUEUED_SESSIONS = 250;
 
 uint64_t lastWiFiAttemptMillis = 0;
 uint64_t lastSyncAttemptMillis = 0;
@@ -138,6 +177,15 @@ bool uploadOldestQueuedSession();
 bool removeQueuedSessionById(const String &sessionId);
 void stopAndRecordSession(const String &reason, const String &status);
 void stopMotors();
+bool appendQueuedSession(const String &record);
+uint32_t countQueuedSessions();
+String isoTimestamp();
+bool ensureClockSynchronized(uint32_t timeoutMs = NTP_SYNC_TIMEOUT_MS);
+bool validApiBaseUrl(const String &url);
+void saveActiveSessionCheckpoint();
+void clearActiveSessionCheckpoint();
+void recoverInterruptedSession();
+float pwmToEstimatedFrequency(int pwmValue);
 
 // -----------------------------------------------------------------------------
 // BLE callbacks
@@ -191,9 +239,9 @@ void setup() {
 
   loadConfiguration();
   initializeDeviceIdentity();
-  initializeBle();
-
   if (config.wifiSsid.length() > 0) connectWiFi(true);
+  recoverInterruptedSession();
+  initializeBle();
 
   Serial.println();
   Serial.println("========================================");
@@ -295,7 +343,7 @@ void loadConfiguration() {
   config.displayName = preferences.getString("display_name", "");
   config.wifiSsid = preferences.getString("wifi_ssid", "");
   config.wifiPassword = preferences.getString("wifi_pass", "");
-  config.apiBaseUrl = preferences.getString("api_url", "");
+  config.apiBaseUrl = preferences.getString("api_url", DEFAULT_API_BASE_URL);
   config.apiToken = preferences.getString("api_token", "");
   config.patientId = preferences.getString("patient_id", "");
   config.assignmentId = preferences.getString("assign_id", "");
@@ -357,6 +405,71 @@ void incrementDeviceSequence() {
   preferences.begin("neurosense", false);
   preferences.putUInt("sequence", deviceSequence);
   preferences.end();
+}
+
+void saveActiveSessionCheckpoint() {
+  preferences.begin("neurosense", false);
+  preferences.putBool("run_active", true);
+  preferences.putString("run_id", activeSession.sessionId);
+  preferences.putString("run_sched", activeSession.scheduleId);
+  preferences.putString("run_start", activeSession.startedAtUtc);
+  preferences.putFloat("run_hz", activeSession.requestedHz);
+  preferences.putInt("run_pwm", activeSession.pwmValue);
+  preferences.putUInt("run_dur", activeSession.durationLimitSeconds);
+  preferences.end();
+}
+
+void clearActiveSessionCheckpoint() {
+  preferences.begin("neurosense", false);
+  preferences.remove("run_active");
+  preferences.remove("run_id");
+  preferences.remove("run_sched");
+  preferences.remove("run_start");
+  preferences.remove("run_hz");
+  preferences.remove("run_pwm");
+  preferences.remove("run_dur");
+  preferences.end();
+}
+
+void recoverInterruptedSession() {
+  preferences.begin("neurosense", true);
+  const bool wasRunning = preferences.getBool("run_active", false);
+  const String sessionId = preferences.getString("run_id", "");
+  const String scheduleId = preferences.getString("run_sched", "");
+  const String startedAt = preferences.getString("run_start", "");
+  const float requestedHz = preferences.getFloat("run_hz", 0.0f);
+  const int pwmValue = preferences.getInt("run_pwm", 0);
+  preferences.end();
+  if (!wasRunning || sessionId.length() == 0) return;
+
+  JsonDocument session;
+  session["session_id"] = sessionId;
+  session["patient_id"] = config.patientId;
+  session["device_id"] = config.deviceId;
+  session["assignment_id"] = config.assignmentId;
+  if (scheduleId.length() > 0) session["schedule_id"] = scheduleId;
+  session["device_sequence"] = deviceSequence;
+  session["started_at_utc"] = startedAt;
+  session["ended_at_utc"] = time(nullptr) > 100000 ? isoTimestamp() : startedAt;
+  session["requested_hz"] = requestedHz;
+  session["estimated_hz"] = pwmToEstimatedFrequency(pwmValue);
+  session["measured_hz"] = nullptr;
+  session["pwm_value"] = pwmValue;
+  session["duration_seconds"] = 0;
+  session["status"] = "interrupted";
+  session["completion_reason"] = "power_loss_or_reset";
+  session["sync_source"] = "device_wifi";
+  session["timestamp_source"] = time(nullptr) > 100000 ? "ntp" : "uptime_fallback";
+
+  String record;
+  serializeJson(session, record);
+  if (appendQueuedSession(record)) {
+    clearActiveSessionCheckpoint();
+    Serial.printf("Recovered interrupted session %s\n", sessionId.c_str());
+  } else {
+    storageFault = true;
+    Serial.println("ERROR: Could not recover interrupted session; new sessions are disabled");
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -445,9 +558,13 @@ void notifyStatus() {
   response["type"] = "status";
   response["device_id"] = config.deviceId;
   response["display_name"] = config.displayName;
+  response["firmware_version"] = FIRMWARE_VERSION;
   response["ble_connected"] = bleConnected;
   response["wifi_connected"] = WiFi.status() == WL_CONNECTED;
   response["wifi_ssid"] = config.wifiSsid;
+  response["wifi_rssi"] = WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0;
+  response["api_base_url"] = config.apiBaseUrl;
+  response["api_configured"] = config.apiBaseUrl.length() > 0 && config.apiToken.length() > 0;
   response["provisioned"] = config.patientId.length() > 0 && config.assignmentId.length() > 0;
   response["patient_id"] = config.patientId;
   response["assignment_id"] = config.assignmentId;
@@ -459,6 +576,8 @@ void notifyStatus() {
   response["session_running"] = activeSession.running;
   response["current_hz"] = activeSession.requestedHz;
   response["pending_sessions"] = countQueuedSessions();
+  response["storage_fault"] = storageFault;
+  response["free_heap_bytes"] = ESP.getFreeHeap();
   notifyJson(response);
 }
 
@@ -488,8 +607,8 @@ void processBleCommand(const String &payload) {
   if (type == "set_wifi") {
     const String ssid = command["ssid"] | "";
     const String password = command["password"] | "";
-    if (ssid.length() == 0) {
-      notifyError(type, "missing_ssid", "Wi-Fi SSID is required.");
+    if (ssid.length() == 0 || ssid.length() > 32 || password.length() > 63) {
+      notifyError(type, "invalid_wifi_configuration", "SSID must be 1-32 bytes and password at most 63 bytes.");
       return;
     }
     saveWiFiConfiguration(ssid, password);
@@ -505,8 +624,8 @@ void processBleCommand(const String &payload) {
   if (type == "set_server") {
     const String baseUrl = command["api_base_url"] | "";
     const String token = command["api_token"] | "";
-    if (baseUrl.length() == 0 || token.length() == 0) {
-      notifyError(type, "missing_server_configuration", "api_base_url and api_token are required.");
+    if (!validApiBaseUrl(baseUrl) || token.length() < 24 || token.length() > 256) {
+      notifyError(type, "invalid_server_configuration", "Use an HTTPS API URL and a 24-256 character device token.");
       return;
     }
     saveServerConfiguration(baseUrl, token);
@@ -548,6 +667,10 @@ void processBleCommand(const String &payload) {
     }
     if (config.patientId.length() == 0 || config.assignmentId.length() == 0) {
       notifyError(type, "device_not_assigned", "Patient and assignment configuration are required.");
+      return;
+    }
+    if (storageFault || countQueuedSessions() >= MAX_QUEUED_SESSIONS) {
+      notifyError(type, "storage_unavailable", "Session storage is unavailable or full; synchronize or service the device.");
       return;
     }
     const float requestedHz = command["target_hz"] | config.targetHz;
@@ -690,6 +813,7 @@ void startSession(const String &scheduleId, float targetHz, uint32_t durationSec
   activeSession.startedAtMillis = millis();
   activeSession.durationLimitSeconds = durationSeconds;
   applyVibrationFrequency(targetHz);
+  saveActiveSessionCheckpoint();
   Serial.printf("Session started: %s at %.1f Hz\n", activeSession.sessionId.c_str(), targetHz);
 }
 
@@ -738,6 +862,8 @@ void stopAndRecordSession(const String &reason, const String &status) {
   String record;
   serializeJson(session, record);
   const bool queued = appendQueuedSession(record);
+  if (queued) clearActiveSessionCheckpoint();
+  else storageFault = true;
 
   Serial.printf("Session stopped: %s (%s), queued=%s\n",
                 activeSession.sessionId.c_str(), reason.c_str(), queued ? "yes" : "no");
@@ -918,6 +1044,21 @@ void sendPendingRecordsOverBle() {
 // Wi-Fi and server synchronization
 // -----------------------------------------------------------------------------
 
+bool validApiBaseUrl(const String &url) {
+  if (url.length() == 0 || url.length() > 180 || url.indexOf('#') >= 0 || url.indexOf('?') >= 0) return false;
+  if (url.startsWith("https://")) return true;
+  // Plain HTTP is allowed only for explicit private-LAN development targets.
+  return url.startsWith("http://192.168.") || url.startsWith("http://10.");
+}
+
+bool ensureClockSynchronized(uint32_t timeoutMs) {
+  if (time(nullptr) > 1700000000) return true;
+  configTime(0, 0, "pool.ntp.org", "time.google.com", "time.cloudflare.com");
+  const uint64_t started = millis();
+  while (time(nullptr) <= 1700000000 && millis() - started < timeoutMs) delay(100);
+  return time(nullptr) > 1700000000;
+}
+
 bool connectWiFi(bool forceAttempt) {
   if (WiFi.status() == WL_CONNECTED) return true;
   if (config.wifiSsid.length() == 0) return false;
@@ -954,9 +1095,29 @@ bool uploadOldestQueuedSession() {
   parsed["sync_source"] = "device_wifi";
   serializeJson(parsed, record);
 
-  HTTPClient http;
   const String url = config.apiBaseUrl + "/api/therapy-sessions";
-  if (!http.begin(url)) return false;
+  if (!validApiBaseUrl(config.apiBaseUrl)) {
+    Serial.println("Session upload blocked: invalid API base URL");
+    return false;
+  }
+
+  HTTPClient http;
+  WiFiClient plainClient;
+  WiFiClientSecure secureClient;
+  bool begun = false;
+  if (url.startsWith("https://")) {
+    if (!ensureClockSynchronized()) {
+      Serial.println("Session upload deferred: clock is not synchronized for TLS validation");
+      return false;
+    }
+    secureClient.setCACert(ISRG_ROOT_X1);
+    begun = http.begin(secureClient, url);
+  } else {
+    begun = http.begin(plainClient, url);
+  }
+  if (!begun) return false;
+  http.setConnectTimeout(12000);
+  http.setTimeout(15000);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Authorization", String("Bearer ") + config.apiToken);
   const int responseCode = http.POST(record);
@@ -972,7 +1133,7 @@ bool uploadOldestQueuedSession() {
     }
   }
 
-  Serial.printf("Session upload failed: HTTP %d\n", responseCode);
+  Serial.printf("Session upload failed: HTTP %d, response=%s\n", responseCode, responseBody.c_str());
   return false;
 }
 

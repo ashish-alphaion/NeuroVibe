@@ -66,13 +66,13 @@ The app must concatenate the chunks before parsing the JSON.
 {"type":"set_wifi","ssid":"ClinicWiFi","password":"wifi-password"}
 ```
 
-### Configure the local API
+### Configure the NeuroVibe API
 
 ```json
-{"type":"set_server","api_base_url":"http://192.168.1.20:8080","api_token":"DEVICE_BEARER_TOKEN"}
+{"type":"set_server","api_base_url":"https://neurovibeapi.netlify.app","api_token":"DEVICE_BEARER_TOKEN"}
 ```
 
-Use the computer's LAN address, not `localhost`, because `localhost` on the ESP32 means the ESP32 itself.
+The Netlify base URL is compiled as the default, but the app must still provision the device-specific token. Plain HTTP is accepted only for `10.x.x.x` and `192.168.x.x` private-LAN development addresses. Never use `localhost`, because it means the ESP32 itself.
 
 Create the unique device credential from the local backend using `POST /api/devices/{device_id}/credential`, then provision the returned one-time token through this command. Do not provision a doctor login token to the device.
 
@@ -172,6 +172,8 @@ Factory reset clears Wi-Fi, server configuration, assignment, care-plan limits a
 - The patient-specific care-plan range is enforced independently.
 - The motors stop when the BLE app disconnects during an app-controlled session.
 - Completed/interrupted sessions are written to LittleFS before synchronization.
+- An active-session checkpoint is stored in NVS and recovered as interrupted after an unexpected reset or power loss.
+- New sessions are blocked when 250 records are pending, preventing uncontrolled filesystem growth.
 - ERM vibration frequency is estimated from PWM calibration, not measured.
-- Wi-Fi credentials are stored in ESP32 Preferences. Enable NVS encryption, flash encryption, secure boot and authenticated BLE enrollment before a production or clinical deployment.
-- HTTPS requires a trusted server certificate configuration. The local MVP uses an HTTP LAN URL only for development.
+- HTTPS validates the Netlify certificate chain with the embedded ISRG Root X1 CA; insecure TLS is never enabled. The CA must be maintained through firmware updates before expiry or certificate-chain changes.
+- Wi-Fi credentials and API credentials are stored in ESP32 Preferences. Enable NVS encryption, flash encryption, secure boot and authenticated BLE enrollment before a production or clinical deployment.

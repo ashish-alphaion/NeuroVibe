@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Secure NeuroVibe doctor and administrator portal"><title>Sign in · NeuroVibe Portal</title><link rel="stylesheet" href="assets/styles.css"></head>
+<body class="login-page" data-page="login">
+  <main class="login-panel">
+    <div class="login-brand"><span class="brand-mark"><span class="material-symbols-outlined">neurology</span></span><div><div class="brand-title">NeuroVibe</div><div class="eyebrow">Doctor / Admin Portal</div></div></div>
+    <section class="login-card" aria-labelledby="login-title">
+      <h1 id="login-title">Welcome back</h1><p class="muted">Sign in with your authorized clinical account.</p>
+      <div id="login-alert" class="form-alert hidden" role="alert"></div>
+      <form id="login-form">
+        <div class="form-field"><label for="email">Institutional email</label><div class="input-wrap"><span class="material-symbols-outlined">mail</span><input id="email" name="email" type="email" autocomplete="username" placeholder="doctor@clinic.org" required></div></div>
+        <div class="form-field"><label for="password">Password</label><div class="input-wrap"><span class="material-symbols-outlined">lock</span><input id="password" name="password" type="password" autocomplete="current-password" placeholder="Enter your password" required><button class="password-toggle" id="password-toggle" type="button" aria-label="Show password"><span class="material-symbols-outlined">visibility</span></button></div></div>
+        <div class="check-row"><label><input type="checkbox" checked> Stay signed in</label><span class="muted">Authorized staff only</span></div>
+        <button class="btn btn-primary" type="submit" style="width:100%">Sign in <span class="material-symbols-outlined">login</span></button>
+      </form>
+    </section>
+    <p class="login-footer">NeuroVibe prototype · Access is logged and controlled by your organization.</p>
+  </main>
+  <aside class="login-art" aria-hidden="true"><div class="pulse-lines"></div><div class="login-art-copy"><div class="eyebrow" style="color:#88cffb">Connected neurological care</div><h2>Clear oversight for every patient and device.</h2><p>Review schedules, device health and synchronized vibration-session records from one clinical workspace.</p><div class="secure-note"><span class="material-symbols-outlined">shield_lock</span><span>Patient access is restricted using Supabase authentication and database row-level policies.</span></div></div></aside>
+  <script type="module" src="assets/app.js"></script>
+</body></html>
