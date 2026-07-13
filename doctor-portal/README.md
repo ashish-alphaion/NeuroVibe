@@ -22,3 +22,5 @@ Build command: leave empty
 The Supabase URL and publishable key are safe browser configuration. Never add a Supabase secret key to this directory.
 
 Before sign-in works, create the administrator in Supabase Auth and ensure its `public.profiles` row has `role = 'admin'`, `status = 'active'`, and an organization.
+
+If an existing Auth user cannot enter, run `supabase/repair-admin-login.sql` in Supabase SQL Editor after replacing both email placeholders.

@@ -1,4 +1,4 @@
-import { getAuthenticatedProfile, requirePortalUser, signOut } from "./auth.js";
+import { getAuthenticatedProfile, inspectPortalAccess, requirePortalUser, signOut } from "./auth.js";
 import { supabase } from "./supabase-client.js";
 
 const page = document.body.dataset.page;
@@ -53,10 +53,19 @@ async function initializeLogin() {
       button.firstChild.textContent = "Sign in ";
       return;
     }
-    const auth = await getAuthenticatedProfile();
-    if (!auth) {
-      alert.textContent = "This account is not an active doctor or administrator account.";
+    const access = await inspectPortalAccess();
+    if (!access.ok) {
+      const accessMessages = {
+        profile_missing: "Your login exists, but its public doctor profile has not been created.",
+        profile_inactive: `Your portal profile is ${access.profile?.status || "inactive"}. An administrator must activate it.`,
+        role_not_allowed: `This account has the ${access.profile?.role || "unknown"} role. Doctor or administrator access is required.`,
+        organization_missing: "Your account is not assigned to a clinic organization.",
+        profile_query_failed: "The profile could not be read. Confirm that the NeuroVibe schema and RLS migration were applied.",
+        session_error: "Supabase could not establish a session. Please retry.",
+      };
+      alert.textContent = accessMessages[access.code] || "This account is not authorized for the doctor portal.";
       alert.className = "form-alert error";
+      await supabase.auth.signOut();
       button.disabled = false;
       button.firstChild.textContent = "Sign in ";
       return;
