@@ -25,16 +25,16 @@ using the service and characteristics documented in `docs/ble-protocol.md`.
 It implements device information/status, Wi-Fi provisioning, session start,
 frequency updates, normal stop and emergency stop.
 
-## Prototype data
+## Patient authentication
 
-The current access form opens a fictional patient experience so the UI and BLE
-device workflow can be tested before patient Supabase accounts and invitation
-redemption endpoints are finalized. No doctor/admin features are included.
+Patient accounts are created from the NeuroVibe doctor portal. The enrollment
+endpoint invites the patient through Supabase Auth and links the Auth UUID to
+`profiles.id` and `patients.user_id`.
 
-Demo sign-in:
+The patient opens the invitation email on the Android device. The callback
+`neurovibe://auth/callback` opens the app, where the patient creates a private
+password. Subsequent sign-ins use that same email and password. The app rejects
+staff accounts and Auth users that are not linked to a patient record.
 
-```text
-Email: patient.demo@neurovibe.app
-Password: Neuro@1234
-Invitation code: NV-DEMO-001
-```
+Add `neurovibe://auth/callback` to the Supabase Authentication redirect URL
+allow list before testing invitations.

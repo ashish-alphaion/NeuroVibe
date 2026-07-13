@@ -7,12 +7,16 @@ const BASE_HEADERS = {
 };
 
 export function corsHeaders(request) {
-  const allowed = process.env.ALLOWED_ORIGIN?.trim();
+  const allowedOrigins = (process.env.ALLOWED_ORIGIN ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
   const origin = request.headers.get("origin");
+  const allowed = origin && allowedOrigins.includes(origin) ? origin : null;
 
   return {
     ...BASE_HEADERS,
-    ...(allowed && origin === allowed
+    ...(allowed
       ? {
           "access-control-allow-origin": allowed,
           vary: "Origin",

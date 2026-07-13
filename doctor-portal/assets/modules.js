@@ -41,10 +41,18 @@ function field(label, name, type = "text", attrs = "") { return `<label class="f
 function selectField(label, name, options, attrs = "") { return `<label class="form-field"><span>${esc(label)}</span><select name="${name}" ${attrs}>${options.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("")}</select></label>`; }
 
 export function openPatientEnrollment(auth, onDone = () => location.reload()) {
-  openModal("Add patient", `${field("Full name", "full_name", "text", "required minlength=2")}${field("Patient code", "patient_code", "text", "required placeholder=NV-1001")}${field("Date of birth", "date_of_birth", "date")}${selectField("Gender", "gender", [["", "Not specified"], ["female", "Female"], ["male", "Male"], ["non_binary", "Non-binary"], ["other", "Other"], ["prefer_not_to_say", "Prefer not to say"]])}${field("Phone", "phone", "tel")}${field("Email", "email", "email")}`, "Create patient", async form => {
-    const payload = { organization_id: auth.profile.organization_id, doctor_id: auth.profile.id, full_name: form.full_name.trim(), patient_code: form.patient_code.trim().toUpperCase(), date_of_birth: form.date_of_birth || null, gender: form.gender || null, phone: form.phone || null, email: form.email || null, program_status: "enrolled" };
-    const patient = assert(await supabase.from("patients").insert(payload).select("id").single());
-    await recordAudit(auth, "patient.created", "patient", patient.id, `Patient ${payload.full_name} enrolled`); toast("Patient enrolled successfully."); onDone(patient.id);
+  openModal("Add patient and app login", `${field("Full name", "full_name", "text", "required minlength=2")}${field("Patient code", "patient_code", "text", "required placeholder=NV-1001")}${field("Date of birth", "date_of_birth", "date")}${selectField("Gender", "gender", [["", "Not specified"], ["female", "Female"], ["male", "Male"], ["non_binary", "Non-binary"], ["other", "Other"], ["prefer_not_to_say", "Prefer not to say"]])}${field("Phone", "phone", "tel")}${field("Email for app login", "email", "email", "required")}<div class="form-field full"><small>An invitation will be sent to this address. The patient creates a private password and then uses the same email and password in NeuroVibe.</small></div>`, "Create and invite patient", async form => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error("Your portal session has expired. Please sign in again.");
+    const response = await fetch(`${API_BASE_URL}/api/patients`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(form),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.message || "The patient account could not be created.");
+    toast(result.invitation_sent ? "Patient enrolled. Invitation email sent." : "Patient enrolled and linked to the existing account.");
+    onDone(result.patient.id);
   });
 }
 

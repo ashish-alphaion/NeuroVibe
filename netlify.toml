@@ -24,6 +24,12 @@
   force = true
 
 [[redirects]]
+  from = "/api/patients"
+  to = "/.netlify/functions/patients"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/gateway"
   to = "/gateway/index.html"
   status = 200

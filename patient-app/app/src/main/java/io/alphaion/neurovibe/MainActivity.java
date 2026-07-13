@@ -20,6 +20,7 @@ import android.os.Bundle;
 import android.os.CountDownTimer;
 import android.os.Handler;
 import android.os.Looper;
+import android.net.Uri;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -44,9 +45,6 @@ import java.util.Locale;
 import java.util.Map;
 
 public final class MainActivity extends Activity implements NeuroSenseBleManager.Listener {
-    public static final String DEMO_EMAIL = "patient.demo@neurovibe.app";
-    public static final String DEMO_PASSWORD = "Neuro@1234";
-    public static final String DEMO_INVITATION = "NV-DEMO-001";
     private static final int NAVY = Color.rgb(0, 29, 50);
     private static final int NAVY_CARD = Color.rgb(18, 50, 75);
     private static final int BLUE = Color.rgb(5, 100, 147);
@@ -60,6 +58,7 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Map<String, BluetoothDevice> scanResults = new LinkedHashMap<>();
     private NeuroSenseBleManager ble;
+    private SupabaseAuthClient authClient;
     private FrameLayout root;
     private LinearLayout deviceList;
     private TextView connectionLabel;
@@ -68,6 +67,8 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
     private CountDownTimer sessionTimer;
     private int selectedHz = 85;
     private int remainingSeconds = 600;
+    private String patientName = "Patient";
+    private String patientCode = "Not linked";
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -76,8 +77,9 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
         window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
         root = new FrameLayout(this); root.setBackgroundColor(PALE); setContentView(root);
         ble = new NeuroSenseBleManager(this, this);
+        authClient = new SupabaseAuthClient();
         createNotificationChannel();
-        showSplash();
+        if (!handleAuthIntent(getIntent())) showSplash();
     }
 
     private void showSplash() {
@@ -104,26 +106,85 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
     }
 
     private void showAccess(boolean invitation) {
+        if (invitation) {
+            showInvitationInstructions();
+            return;
+        }
         LinearLayout page = page(false);
         Button back = textButton("‹ Back"); back.setOnClickListener(v -> showWelcome()); page.addView(back, wrap());
-        page.addView(title(invitation ? "Accept your invitation" : "Patient sign in", 28), margin(-1, -2, 0, 24, 0, 8));
-        page.addView(body(invitation ? "Enter the invitation code provided by your clinic." : "Use the patient account created by your clinic.", 15), margin(-1, -2, 0, 0, 0, 24));
+        page.addView(title("Patient sign in", 28), margin(-1, -2, 0, 24, 0, 8));
+        page.addView(body("Use the email invited by your clinic and the password you created.", 15), margin(-1, -2, 0, 0, 0, 24));
         EditText email = input("Email address"); page.addView(email, margin(-1, 54, 0, 0, 0, 12));
-        EditText secret = input(invitation ? "Invitation code" : "Password"); if (!invitation) secret.setInputType(0x00000081); page.addView(secret, margin(-1, 54, 0, 0, 0, 18));
-        Button continueButton = primary(invitation ? "Continue" : "Sign In");
+        EditText secret = input("Password"); secret.setInputType(0x00000081); page.addView(secret, margin(-1, 54, 0, 0, 0, 18));
+        Button continueButton = primary("Sign In");
         continueButton.setOnClickListener(v -> {
             String enteredEmail = email.getText().toString().trim(); String enteredSecret = secret.getText().toString();
-            boolean valid = enteredEmail.equalsIgnoreCase(DEMO_EMAIL) && enteredSecret.equals(invitation ? DEMO_INVITATION : DEMO_PASSWORD);
-            if (!valid) { toast(invitation ? "Use the demo email and invitation code provided below." : "Incorrect demo email or password."); return; }
-            getPreferences(MODE_PRIVATE).edit().putBoolean("patient_demo", true).apply(); requestAppPermissions(); showHome();
+            if (enteredEmail.isEmpty() || enteredSecret.isEmpty()) { toast("Enter your email and password."); return; }
+            continueButton.setEnabled(false); continueButton.setText("Signing in…");
+            authClient.signIn(enteredEmail, enteredSecret, new SupabaseAuthClient.Callback() {
+                public void onSuccess(SupabaseAuthClient.PatientSession session) { runOnUiThread(() -> { applyPatientSession(session); requestAppPermissions(); showHome(); }); }
+                public void onError(String message) { runOnUiThread(() -> { continueButton.setEnabled(true); continueButton.setText("Sign In"); toast(message); }); }
+            });
         });
         page.addView(continueButton, margin(-1, 54, 0, 0, 0, 14));
-        TextView prototype = body(invitation ? "DEMO ACCOUNT\nEmail: " + DEMO_EMAIL + "\nInvitation: " + DEMO_INVITATION : "DEMO ACCOUNT\nEmail: " + DEMO_EMAIL + "\nPassword: " + DEMO_PASSWORD, 13); prototype.setTextIsSelectable(true); prototype.setBackground(round(SKY, 14)); prototype.setPadding(dp(14), dp(12), dp(14), dp(12)); page.addView(prototype);
         setScrollable(page);
     }
 
+    private void showInvitationInstructions() {
+        LinearLayout page = page(false);
+        Button back = textButton("‹ Back"); back.setOnClickListener(v -> showWelcome()); page.addView(back, wrap());
+        page.addView(title("Accept your invitation", 28), margin(-1, -2, 0, 24, 0, 8));
+        page.addView(body("Open the invitation email sent by your clinic and tap Accept invitation. NeuroVibe will open automatically so you can create your private password.", 15), margin(-1, -2, 0, 0, 0, 24));
+        LinearLayout note = card(Color.WHITE); note.addView(title("No invitation code is needed", 18)); note.addView(body("Your email invitation securely links this app to your patient record. If it has expired, ask your doctor to send a new invitation.", 14)); page.addView(note);
+        Button signIn = outline("I already created my password"); signIn.setOnClickListener(v -> showAccess(false)); page.addView(signIn, margin(-1, 52, 0, 18, 0, 0));
+        setScrollable(page);
+    }
+
+    private boolean handleAuthIntent(Intent intent) {
+        Uri data = intent == null ? null : intent.getData();
+        if (data == null || !"neurovibe".equals(data.getScheme()) || !"auth".equals(data.getHost())) return false;
+        String fragment = data.getFragment();
+        if (fragment == null) { showWelcome(); toast("The invitation link is incomplete."); return true; }
+        Uri parameters = Uri.parse("https://callback.invalid/?" + fragment);
+        String accessToken = parameters.getQueryParameter("access_token");
+        if (accessToken == null || accessToken.isEmpty()) { showWelcome(); toast("The invitation link is invalid or expired."); return true; }
+        showSetPassword(accessToken);
+        return true;
+    }
+
+    private void showSetPassword(String accessToken) {
+        LinearLayout page = page(false);
+        page.addView(title("Create your password", 28), margin(-1, -2, 0, 24, 0, 8));
+        page.addView(body("Use at least eight characters. Keep this password private; your doctor cannot see it.", 15), margin(-1, -2, 0, 0, 0, 24));
+        EditText password = input("New password"); password.setInputType(0x00000081); page.addView(password, margin(-1,54,0,0,0,12));
+        EditText confirmation = input("Confirm password"); confirmation.setInputType(0x00000081); page.addView(confirmation, margin(-1,54,0,0,0,18));
+        Button save = primary("Activate account"); page.addView(save, margin(-1,54,0,0,0,14));
+        save.setOnClickListener(v -> {
+            String value = password.getText().toString();
+            if (value.length() < 8) { toast("Password must contain at least eight characters."); return; }
+            if (!value.equals(confirmation.getText().toString())) { toast("Passwords do not match."); return; }
+            save.setEnabled(false); save.setText("Activating…");
+            authClient.acceptInvitation(accessToken, value, new SupabaseAuthClient.Callback() {
+                public void onSuccess(SupabaseAuthClient.PatientSession session) { runOnUiThread(() -> { applyPatientSession(session); requestAppPermissions(); showHome(); }); }
+                public void onError(String message) { runOnUiThread(() -> { save.setEnabled(true); save.setText("Activate account"); toast(message); }); }
+            });
+        });
+        setScrollable(page);
+    }
+
+    private void applyPatientSession(SupabaseAuthClient.PatientSession session) {
+        patientName = session.fullName;
+        patientCode = session.patientCode;
+    }
+
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleAuthIntent(intent);
+    }
+
     private void showHome() {
-        LinearLayout page = page(true); addHeader(page, "Good morning, Aarav");
+        LinearLayout page = page(true); addHeader(page, "Welcome, " + patientName);
         TextView intro = body("Your next prescribed session is ready.", 15); page.addView(intro, margin(-1, -2, 0, 2, 0, 22));
         LinearLayout therapy = card(NAVY_CARD); TextView eyebrow = label("TODAY · MORNING THERAPY", 11); eyebrow.setTextColor(Color.rgb(142,205,255)); therapy.addView(eyebrow);
         TextView plan = title("85 Hz · 10 minutes", 25); plan.setTextColor(Color.WHITE); therapy.addView(plan, margin(-1,-2,0,10,0,8));
@@ -158,7 +219,7 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
 
     private void showMore() {
         LinearLayout page = page(true); addHeader(page, "My NeuroVibe");
-        LinearLayout profile = card(Color.WHITE); profile.addView(title("Aarav Demo", 22)); profile.addView(body("Patient ID · NV-DEMO-001", 13)); page.addView(profile);
+        LinearLayout profile = card(Color.WHITE); profile.addView(title(patientName, 22)); profile.addView(body("Patient ID · " + patientCode, 13)); page.addView(profile);
         page.addView(menuButton("NeuroSense device", connected ? connectedName : "Connect your assigned device", this::showConnect), margin(-1,-2,0,16,0,0));
         page.addView(menuButton("Care plan", "Morning sensory protocol · 20–120 Hz", () -> carePlanDialog()), margin(-1,-2,0,12,0,0));
         page.addView(menuButton("Wi-Fi setup", "Send Wi-Fi details securely over Bluetooth", this::wifiDialog), margin(-1,-2,0,12,0,0));
@@ -343,5 +404,5 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
     private int dp(int value){return Math.round(value*getResources().getDisplayMetrics().density);}
     private void toast(String message){Toast.makeText(this,message,Toast.LENGTH_LONG).show();}
 
-    @Override protected void onDestroy(){if(sessionTimer!=null)sessionTimer.cancel();ble.disconnect();super.onDestroy();}
+    @Override protected void onDestroy(){if(sessionTimer!=null)sessionTimer.cancel();if(authClient!=null)authClient.close();ble.disconnect();super.onDestroy();}
 }

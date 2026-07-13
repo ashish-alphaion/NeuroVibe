@@ -56,7 +56,7 @@
 31-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:12:64-87
 32
 33    <application
-33-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:14:5-31:19
+33-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:14:5-38:19
 34        android:allowBackup="false"
 34-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:15:9-36
 35        android:debuggable="true"
@@ -74,24 +74,48 @@
 42        android:usesCleartextTraffic="false" >
 42-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:21:9-45
 43        <activity
-43-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:22:9-30:20
+43-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:22:9-37:20
 44            android:name="io.alphaion.neurovibe.MainActivity"
 44-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:23:13-41
 45            android:exported="true"
 45-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:24:13-36
-46            android:screenOrientation="portrait" >
-46-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:25:13-49
-47            <intent-filter>
-47-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:26:13-29:29
-48                <action android:name="android.intent.action.MAIN" />
-48-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:27:17-69
-48-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:27:25-66
-49
-50                <category android:name="android.intent.category.LAUNCHER" />
-50-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:28:17-77
-50-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:28:27-74
-51            </intent-filter>
-52        </activity>
-53    </application>
-54
-55</manifest>
+46            android:launchMode="singleTop"
+46-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:25:13-43
+47            android:screenOrientation="portrait" >
+47-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:26:13-49
+48            <intent-filter>
+48-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:27:13-30:29
+49                <action android:name="android.intent.action.MAIN" />
+49-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:28:17-69
+49-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:28:25-66
+50
+51                <category android:name="android.intent.category.LAUNCHER" />
+51-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:29:17-77
+51-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:29:27-74
+52            </intent-filter>
+53            <intent-filter>
+53-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:31:13-36:29
+54                <action android:name="android.intent.action.VIEW" />
+54-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:32:17-69
+54-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:32:25-66
+55
+56                <category android:name="android.intent.category.DEFAULT" />
+56-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:33:17-76
+56-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:33:27-73
+57                <category android:name="android.intent.category.BROWSABLE" />
+57-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:34:17-78
+57-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:34:27-75
+58
+59                <data
+59-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:35:17-103
+60                    android:host="auth"
+60-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:35:50-69
+61                    android:pathPrefix="/callback"
+61-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:35:70-100
+62                    android:scheme="neurovibe" />
+62-->C:\Users\user\Documents\Github\NeuroVibe\patient-app\app\src\main\AndroidManifest.xml:35:23-49
+63            </intent-filter>
+64        </activity>
+65    </application>
+66
+67</manifest>
