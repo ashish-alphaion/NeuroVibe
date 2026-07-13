@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-labelledby="title description">
+  <title id="title">NeuroVibe system architecture</title>
+  <desc id="description">Architecture diagram showing Doctor Web Portal, Patient NeuroVibe App, NeuroSense ESP32 device, backend API, database, notifications, and online and offline synchronization paths.</desc>
+  <defs>
+    <linearGradient id="hero" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0f3d67"/><stop offset="1" stop-color="#146c94"/></linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#1d3557" flood-opacity=".13"/></filter>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#1e6f9f"/></marker>
+    <marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#27855b"/></marker>
+    <marker id="arrowOrange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#ca6b21"/></marker>
+    <style>
+      .title { font: 700 36px Arial, sans-serif; fill:#12324b; }
+      .subtitle { font: 400 18px Arial, sans-serif; fill:#517083; }
+      .section { font: 700 16px Arial, sans-serif; letter-spacing:1.3px; fill:#557082; }
+      .node-title { font: 700 23px Arial, sans-serif; fill:#12324b; }
+      .node-body { font: 400 16px Arial, sans-serif; fill:#355367; }
+      .small { font: 400 14px Arial, sans-serif; fill:#416174; }
+      .label { font: 600 14px Arial, sans-serif; fill:#245474; }
+      .white-title { font: 700 23px Arial, sans-serif; fill:#fff; }
+      .white-body { font: 400 15px Arial, sans-serif; fill:#e7f5fb; }
+      .legend { font: 600 14px Arial, sans-serif; fill:#355367; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1000" fill="#f7fbfd"/>
+  <rect x="35" y="25" width="1530" height="100" rx="18" fill="url(#hero)"/>
+  <text x="75" y="72" class="white-title" font-size="36">NeuroVibe — Connected Therapy System Architecture</text>
+  <text x="75" y="103" class="white-body">Simple patient experience • Doctor-controlled care • Secure online and offline session records</text>
+
+  <text x="80" y="170" class="section">PEOPLE &amp; INTERFACES</text>
+  <text x="660" y="170" class="section">DEVICE &amp; CONNECTIVITY</text>
+  <text x="1160" y="170" class="section">CLOUD &amp; CLINICAL RECORD</text>
+
+  <g filter="url(#shadow)">
+    <rect x="65" y="200" width="380" height="205" rx="18" fill="#e7f2fa" stroke="#a8c9df" stroke-width="2"/>
+    <circle cx="112" cy="254" r="25" fill="#1e6f9f"/>
+    <path d="M112 244a9 9 0 1 0 0 18a9 9 0 0 0 0-18m-16 36c2-11 28-11 32 0" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+    <text x="153" y="257" class="node-title">Doctor / Admin</text>
+    <text x="100" y="302" class="node-body">Web portal (HTML, CSS, JavaScript)</text>
+    <text x="100" y="331" class="small">• Register patients and assign devices</text>
+    <text x="100" y="355" class="small">• Schedule sessions for many patients</text>
+    <text x="100" y="379" class="small">• View usage, status, reports and alerts</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="65" y="510" width="380" height="235" rx="18" fill="#edf8f1" stroke="#abd5bb" stroke-width="2"/>
+    <circle cx="112" cy="563" r="25" fill="#27855b"/>
+    <path d="M112 553a9 9 0 1 0 0 18a9 9 0 0 0 0-18m-16 36c2-11 28-11 32 0" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+    <text x="153" y="566" class="node-title">Patient</text>
+    <text x="100" y="610" class="node-body">NeuroVibe mobile app</text>
+    <text x="100" y="639" class="small">• Connect and use assigned device</text>
+    <text x="100" y="663" class="small">• Receive scheduled-session reminders</text>
+    <text x="100" y="687" class="small">• Send controls and offline records</text>
+    <text x="100" y="711" class="small">• Sync automatically when online</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="580" y="285" width="430" height="320" rx="20" fill="#fff6eb" stroke="#efbd86" stroke-width="2"/>
+    <rect x="610" y="320" width="370" height="74" rx="13" fill="#ca6b21"/>
+    <text x="650" y="352" class="white-title">NeuroSense</text>
+    <text x="650" y="377" class="white-body">ESP32-C3 therapy device</text>
+    <text x="620" y="433" class="node-body">BLE setup and nearby app control</text>
+    <text x="620" y="463" class="node-body">Wi‑Fi direct server synchronization</text>
+    <text x="620" y="493" class="node-body">0–230 Hz motor control</text>
+    <text x="620" y="523" class="node-body">Encrypted settings + offline session queue</text>
+    <text x="620" y="563" class="small">Unique device ID • patient assignment • schedule cache</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="1160" y="230" width="360" height="180" rx="18" fill="#f0edfb" stroke="#bdb3e5" stroke-width="2"/>
+    <text x="1200" y="280" class="node-title">Secure Backend API</text>
+    <text x="1200" y="318" class="small">Authentication and authorization</text>
+    <text x="1200" y="344" class="small">Session upload and duplicate prevention</text>
+    <text x="1200" y="370" class="small">Schedules, assignments and audit logs</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="1160" y="520" width="360" height="225" rx="18" fill="#f1f5f7" stroke="#afc1cb" stroke-width="2"/>
+    <ellipse cx="1340" cy="570" rx="110" ry="28" fill="#597785"/>
+    <path d="M1230 570v108c0 16 49 28 110 28s110-12 110-28V570" fill="#d9e6eb" stroke="#597785" stroke-width="2"/>
+    <path d="M1230 624c0 16 49 28 110 28s110-12 110-28M1230 678c0 16 49 28 110 28s110-12 110-28" fill="none" stroke="#597785" stroke-width="2"/>
+    <text x="1200" y="615" class="node-title">Central Database</text>
+    <text x="1200" y="645" class="small">Patients • devices • assignments</text>
+    <text x="1200" y="670" class="small">Schedules • sessions • device status</text>
+    <text x="1200" y="695" class="small">Audit logs and clinical reports</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="1115" y="820" width="450" height="105" rx="18" fill="#fff1f2" stroke="#e7a9b1" stroke-width="2"/>
+    <text x="1150" y="860" class="node-title">Notification Service</text>
+    <text x="1150" y="890" class="small">Pushes session reminders and important device alerts to the patient app</text>
+  </g>
+
+  <path d="M445 302 H650" fill="none" stroke="#1e6f9f" stroke-width="4" marker-end="url(#arrowBlue)"/>
+  <text x="475" y="283" class="label">assignments, schedules, reports</text>
+  <path d="M445 615 H580" fill="none" stroke="#27855b" stroke-width="4" marker-end="url(#arrowGreen)"/>
+  <text x="454" y="595" class="label">BLE: setup, controls, offline sync</text>
+  <path d="M1010 365 H1160" fill="none" stroke="#1e6f9f" stroke-width="4" marker-end="url(#arrowBlue)"/>
+  <text x="1030" y="345" class="label">Wi‑Fi: HTTPS session upload</text>
+  <path d="M445 690 C680 870, 920 860, 1160 350" fill="none" stroke="#27855b" stroke-width="4" marker-end="url(#arrowGreen)"/>
+  <text x="700" y="850" class="label">app uploads locally stored records when internet returns</text>
+  <path d="M1340 410 V520" fill="none" stroke="#597785" stroke-width="4" marker-end="url(#arrowBlue)"/>
+  <text x="1360" y="475" class="label">persisted records</text>
+  <path d="M1160 345 C900 170, 500 170, 250 200" fill="none" stroke="#1e6f9f" stroke-width="4" marker-end="url(#arrowBlue)"/>
+  <path d="M1250 820 V745" fill="none" stroke="#c24b58" stroke-width="4" marker-start="url(#arrowOrange)"/>
+  <path d="M1115 872 C790 955, 480 840, 350 745" fill="none" stroke="#c24b58" stroke-width="4" marker-end="url(#arrowOrange)"/>
+
+  <g transform="translate(65,790)">
+    <rect width="845" height="125" rx="15" fill="#ffffff" stroke="#d0e0e6" stroke-width="2"/>
+    <text x="25" y="33" class="node-title" font-size="19">Reliable offline-first rule</text>
+    <text x="25" y="63" class="small">1. NeuroSense stores every completed session locally.</text>
+    <text x="25" y="88" class="small">2. It uploads directly by Wi‑Fi; otherwise it transfers the record to NeuroVibe over BLE.</text>
+    <text x="25" y="113" class="small">3. NeuroVibe keeps an encrypted local copy and uploads when phone internet returns.</text>
+  </g>
+
+  <g transform="translate(65,945)">
+    <line x1="0" y1="0" x2="45" y2="0" stroke="#1e6f9f" stroke-width="4"/>
+    <text x="55" y="5" class="legend">Direct server / dashboard communication</text>
+    <line x1="345" y1="0" x2="390" y2="0" stroke="#27855b" stroke-width="4"/>
+    <text x="400" y="5" class="legend">BLE and offline synchronization</text>
+    <line x1="690" y1="0" x2="735" y2="0" stroke="#c24b58" stroke-width="4"/>
+    <text x="745" y="5" class="legend">Patient notifications</text>
+  </g>
+</svg>
