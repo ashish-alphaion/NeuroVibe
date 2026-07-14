@@ -29,8 +29,14 @@ final class SupabaseAuthClient {
         void onError(String message);
     }
 
+    interface SyncCallback {
+        void onSuccess(String sessionId);
+        void onError(String message);
+    }
+
     static final class PatientSession {
         final String accessToken;
+        final String refreshToken;
         final String userId;
         final String patientId;
         final String fullName;
@@ -48,12 +54,13 @@ final class SupabaseAuthClient {
         final JSONArray appointments;
         final JSONArray deviceUsage;
 
-        PatientSession(String accessToken, String userId, String patientId, String fullName, String patientCode,
+        PatientSession(String accessToken, String refreshToken, String userId, String patientId, String fullName, String patientCode,
                        String assignmentId, String assignedDeviceId, String assignedDeviceName,
                        String carePlanName, double minHz, double targetHz, double maxHz,
                        int durationSeconds, int maxDurationSeconds, boolean manualControlAllowed,
                        JSONArray appointments, JSONArray deviceUsage) {
             this.accessToken = accessToken;
+            this.refreshToken = refreshToken;
             this.userId = userId;
             this.patientId = patientId;
             this.fullName = fullName;
@@ -96,19 +103,33 @@ final class SupabaseAuthClient {
                         new JSONObject().put("email", email).put("password", password));
                 String token = response.getString("access_token");
                 String userId = response.getJSONObject("user").getString("id");
-                callback.onSuccess(loadPatient(token, userId));
+                callback.onSuccess(loadPatient(token, response.optString("refresh_token", ""), userId));
             } catch (Exception error) {
                 callback.onError(friendlyMessage(error));
             }
         });
     }
 
-    void acceptInvitation(String accessToken, String password, Callback callback) {
+    void restoreSession(String refreshToken, Callback callback) {
+        executor.execute(() -> {
+            try {
+                JSONObject response = requestJson("POST", "/auth/v1/token?grant_type=refresh_token", null,
+                        new JSONObject().put("refresh_token", refreshToken));
+                callback.onSuccess(loadPatient(response.getString("access_token"),
+                        response.optString("refresh_token", refreshToken),
+                        response.getJSONObject("user").getString("id")));
+            } catch (Exception error) {
+                callback.onError(friendlyMessage(error));
+            }
+        });
+    }
+
+    void acceptInvitation(String accessToken, String refreshToken, String password, Callback callback) {
         executor.execute(() -> {
             try {
                 JSONObject user = requestJson("PUT", "/auth/v1/user", accessToken,
                         new JSONObject().put("password", password));
-                callback.onSuccess(loadPatient(accessToken, user.getString("id")));
+                callback.onSuccess(loadPatient(accessToken, refreshToken == null ? "" : refreshToken, user.getString("id")));
             } catch (Exception error) {
                 callback.onError(friendlyMessage(error));
             }
@@ -127,7 +148,20 @@ final class SupabaseAuthClient {
         });
     }
 
-    private PatientSession loadPatient(String token, String userId) throws Exception {
+    void uploadRelayedUsage(PatientSession session, JSONObject record, SyncCallback callback) {
+        executor.execute(() -> {
+            try {
+                JSONObject response = requestJson("POST", "https://neurovibeapi.netlify.app/api/patient-sync",
+                        session.accessToken, record);
+                if (!response.optBoolean("acknowledged", false)) throw new Exception("The server did not acknowledge this usage record.");
+                callback.onSuccess(response.optString("session_id", record.optString("session_id")));
+            } catch (Exception error) {
+                callback.onError(friendlyMessage(error));
+            }
+        });
+    }
+
+    private PatientSession loadPatient(String token, String refreshToken, String userId) throws Exception {
         String profileSelect = URLEncoder.encode("id,role,status", StandardCharsets.UTF_8.name());
         JSONArray profiles = requestArray("/rest/v1/profiles?select=" + profileSelect + "&id=eq." + userId, token);
         if (profiles.length() != 1) throw new Exception("Patient profile was not found.");
@@ -151,7 +185,7 @@ final class SupabaseAuthClient {
         JSONArray deviceUsage;
         try { deviceUsage = requestArray("/rest/v1/therapy_sessions?select=" + usageSelect + "&patient_id=eq." + patientId + "&order=started_at_utc.desc&limit=50", token); }
         catch (Exception unavailable) { deviceUsage = new JSONArray(); }
-        return new PatientSession(token, userId, patient.getString("id"), patient.getString("full_name"), patient.getString("patient_code"),
+        return new PatientSession(token, refreshToken, userId, patient.getString("id"), patient.getString("full_name"), patient.getString("patient_code"),
                 assignment == null ? null : assignment.optString("id", null),
                 assignment == null ? null : assignment.optString("device_id", null),
                 device == null ? null : device.optString("display_name", null),

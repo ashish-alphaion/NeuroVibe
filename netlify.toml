@@ -36,6 +36,24 @@
   force = true
 
 [[redirects]]
+  from = "/api/patient-sync"
+  to = "/.netlify/functions/patient-sync"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/assignment-email"
+  to = "/.netlify/functions/assignment-email"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/reset-prototype"
+  to = "/.netlify/functions/reset-prototype"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/gateway"
   to = "/gateway/index.html"
   status = 200

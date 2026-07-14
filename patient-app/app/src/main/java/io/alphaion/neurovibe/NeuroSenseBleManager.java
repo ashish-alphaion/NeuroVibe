@@ -49,6 +49,9 @@ public final class NeuroSenseBleManager {
     private boolean scanning;
     private final StringBuilder framedJson = new StringBuilder();
     private boolean receivingJson;
+    private final StringBuilder pendingRecord = new StringBuilder();
+    private boolean receivingRecord;
+    private String pendingRecordId = "";
 
     public NeuroSenseBleManager(Context context, Listener listener) {
         this.context = context.getApplicationContext();
@@ -166,6 +169,33 @@ public final class NeuroSenseBleManager {
     private void consume(byte[] value) {
         if (value == null) return;
         String part = new String(value, StandardCharsets.UTF_8);
+        if (part.startsWith("#BEGIN:")) {
+            String[] fields = part.split(":", 3);
+            pendingRecordId = fields.length > 1 ? fields[1] : "";
+            pendingRecord.setLength(0);
+            receivingRecord = true;
+            return;
+        }
+        if (part.startsWith("#END:")) {
+            String completedId = part.substring(5);
+            receivingRecord = false;
+            String json = pendingRecord.toString();
+            pendingRecord.setLength(0);
+            if (!pendingRecordId.equals(completedId)) {
+                main.post(() -> listener.onError("A device usage record was incomplete. It remains safely stored on NeuroSense."));
+                return;
+            }
+            main.post(() -> listener.onMessage(json));
+            return;
+        }
+        if (receivingRecord) {
+            if (pendingRecord.length() + part.length() > 8192) {
+                receivingRecord = false;
+                pendingRecord.setLength(0);
+                main.post(() -> listener.onError("A device usage record exceeded the safe transfer size."));
+            } else pendingRecord.append(part);
+            return;
+        }
         if (part.startsWith("#JSONBEGIN:")) { receivingJson = true; framedJson.setLength(0); return; }
         if ("#JSONEND".equals(part)) { receivingJson = false; String json = framedJson.toString(); main.post(() -> listener.onMessage(json)); return; }
         if (receivingJson) framedJson.append(part); else main.post(() -> listener.onMessage(part));

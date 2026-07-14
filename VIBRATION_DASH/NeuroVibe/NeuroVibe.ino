@@ -45,7 +45,8 @@ constexpr float SYSTEM_MAX_HZ = 230.0f;
 constexpr float CALIBRATION_MIN_RUNNING_HZ = 60.0f;
 constexpr int PWM_AT_MIN_RUNNING_HZ = 70;
 constexpr int PWM_AT_MAX_RUNNING_HZ = 255;
-constexpr char FIRMWARE_VERSION[] = "0.2.0-supabase";
+constexpr char FIRMWARE_VERSION[] = "0.3.0-neurovibe-reset";
+constexpr uint32_t MAX_PATIENT_DURATION_SECONDS = 90 * 60;
 constexpr char DEFAULT_API_BASE_URL[] = "https://neurovibeapi.netlify.app";
 
 // Netlify currently serves a Let's Encrypt chain rooted at ISRG Root X1.
@@ -118,10 +119,10 @@ struct DeviceConfiguration {
   String apiToken;
   String patientId;
   String assignmentId;
-  float minHz = CALIBRATION_MIN_RUNNING_HZ;
-  float targetHz = 150.0f;
+  float minHz = SYSTEM_MIN_HZ;
+  float targetHz = 85.0f;
   float maxHz = SYSTEM_MAX_HZ;
-  uint32_t maxDurationSeconds = 900;
+  uint32_t maxDurationSeconds = MAX_PATIENT_DURATION_SECONDS;
   bool manualControlAllowed = true;
 };
 
@@ -346,10 +347,10 @@ void loadConfiguration() {
   config.apiToken = preferences.getString("api_token", "");
   config.patientId = preferences.getString("patient_id", "");
   config.assignmentId = preferences.getString("assign_id", "");
-  config.minHz = preferences.getFloat("min_hz", CALIBRATION_MIN_RUNNING_HZ);
-  config.targetHz = preferences.getFloat("target_hz", 150.0f);
+  config.minHz = preferences.getFloat("min_hz", SYSTEM_MIN_HZ);
+  config.targetHz = preferences.getFloat("target_hz", 85.0f);
   config.maxHz = preferences.getFloat("max_hz", SYSTEM_MAX_HZ);
-  config.maxDurationSeconds = preferences.getUInt("max_duration", 900);
+  config.maxDurationSeconds = preferences.getUInt("max_duration", MAX_PATIENT_DURATION_SECONDS);
   config.manualControlAllowed = preferences.getBool("manual", true);
   deviceSequence = preferences.getUInt("sequence", 0);
   preferences.end();
@@ -649,8 +650,8 @@ void processBleCommand(const String &payload) {
     const float maxHz = command["max_hz"] | config.maxHz;
     const uint32_t maxDuration = command["max_duration_seconds"] | config.maxDurationSeconds;
     const bool manual = command["manual_control_allowed"] | config.manualControlAllowed;
-    if (!validFrequencyRange(minHz, targetHz, maxHz) || maxDuration == 0) {
-      notifyError(type, "invalid_limits", "Limits require 0 <= min <= target <= max <= 230 and duration > 0.");
+    if (!validFrequencyRange(minHz, targetHz, maxHz) || maxDuration == 0 || maxDuration > MAX_PATIENT_DURATION_SECONDS) {
+      notifyError(type, "invalid_limits", "Limits require 0 <= min <= target <= max <= 230 and duration from 1 to 5400 seconds.");
       return;
     }
     saveCarePlan(minHz, targetHz, maxHz, maxDuration, manual);

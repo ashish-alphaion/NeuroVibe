@@ -285,7 +285,7 @@ export async function openDeviceAssignment(
   const [patients, devices] = await Promise.all([
     supabase
       .from("patients")
-      .select("id,full_name,patient_code")
+      .select("id,full_name,patient_code,email")
       .in("program_status", ["enrolled", "active", "paused"])
       .order("full_name"),
     supabase
@@ -371,7 +371,14 @@ export async function openDeviceAssignment(
         replace ? "Patient device replaced" : "Device assigned to patient",
         { patient_id: selectedPatient },
       );
-      toast(replace ? "Device replaced." : "Device assigned.");
+      const { data: { session } } = await supabase.auth.getSession();
+      let emailSent = false;
+      if (session) {
+        const emailResponse = await fetch(`${API_BASE_URL}/api/assignment-email`, { method: "POST", headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" }, body: JSON.stringify({ patient_id: selectedPatient, device_id: form.device_id }) });
+        const emailResult = await emailResponse.json().catch(() => ({}));
+        emailSent = emailResponse.ok && emailResult.sent === true;
+      }
+      toast((replace ? "Device replaced." : "Device assigned.") + (emailSent ? " Device ID emailed to patient." : " Device ID email is not configured; copy it for the patient."));
       onDone();
     },
   );
