@@ -45,7 +45,7 @@ constexpr float SYSTEM_MAX_HZ = 230.0f;
 constexpr float CALIBRATION_MIN_RUNNING_HZ = 60.0f;
 constexpr int PWM_AT_MIN_RUNNING_HZ = 70;
 constexpr int PWM_AT_MAX_RUNNING_HZ = 255;
-constexpr char FIRMWARE_VERSION[] = "0.3.0-neurovibe-reset";
+constexpr char FIRMWARE_VERSION[] = "0.4.0-factory-enrollment";
 constexpr uint32_t MAX_PATIENT_DURATION_SECONDS = 90 * 60;
 constexpr char DEFAULT_API_BASE_URL[] = "https://neurovibeapi.netlify.app";
 
@@ -103,6 +103,7 @@ bool pendingTransferRequested = false;
 bool wifiConnectRequested = false;
 bool syncRequested = false;
 bool storageFault = false;
+bool serverEnrollmentVerified = false;
 
 // -----------------------------------------------------------------------------
 // Persistent configuration
@@ -111,6 +112,7 @@ bool storageFault = false;
 Preferences preferences;
 
 struct DeviceConfiguration {
+  String hardwareId;
   String deviceId;
   String displayName;
   String wifiSsid;
@@ -174,6 +176,7 @@ void notifyStatus();
 void sendPendingRecordsOverBle();
 bool connectWiFi(bool forceAttempt = false);
 bool uploadOldestQueuedSession();
+bool verifyServerEnrollment();
 bool removeQueuedSessionById(const String &sessionId);
 void stopAndRecordSession(const String &reason, const String &status);
 void stopMotors();
@@ -239,7 +242,7 @@ void setup() {
 
   loadConfiguration();
   initializeDeviceIdentity();
-  if (config.wifiSsid.length() > 0) connectWiFi(true);
+  if (config.wifiSsid.length() > 0 && connectWiFi(true)) verifyServerEnrollment();
   recoverInterruptedSession();
   initializeBle();
 
@@ -275,10 +278,12 @@ void loop() {
   if (wifiConnectRequested && !activeSession.running) {
     wifiConnectRequested = false;
     const bool connected = connectWiFi(true);
+    const bool verified = connected && verifyServerEnrollment();
     if (bleConnected) {
       JsonDocument result;
       result["type"] = "wifi_result";
       result["connected"] = connected;
+      result["server_verified"] = verified;
       result["ssid"] = config.wifiSsid;
       notifyJson(result);
     }
@@ -323,22 +328,21 @@ void loop() {
 // -----------------------------------------------------------------------------
 
 void initializeDeviceIdentity() {
-  if (config.deviceId.length() > 0 && config.displayName.length() > 0) return;
-
   const uint64_t chipId = ESP.getEfuseMac();
   char suffix[7];
   snprintf(suffix, sizeof(suffix), "%06llX", chipId & 0xFFFFFFULL);
-  config.deviceId = String("DEV-NEUROSENSE-") + suffix;
-  config.displayName = String("NeuroSense-") + suffix;
+  if (config.hardwareId.length() == 0) config.hardwareId = String("HW-ESP32C3-") + suffix;
+  if (config.displayName.length() == 0) config.displayName = String("NeuroSense-") + suffix;
 
   preferences.begin("neurosense", false);
-  preferences.putString("device_id", config.deviceId);
+  preferences.putString("hardware_id", config.hardwareId);
   preferences.putString("display_name", config.displayName);
   preferences.end();
 }
 
 void loadConfiguration() {
   preferences.begin("neurosense", true);
+  config.hardwareId = preferences.getString("hardware_id", "");
   config.deviceId = preferences.getString("device_id", "");
   config.displayName = preferences.getString("display_name", "");
   config.wifiSsid = preferences.getString("wifi_ssid", "");
@@ -352,7 +356,24 @@ void loadConfiguration() {
   config.maxHz = preferences.getFloat("max_hz", SYSTEM_MAX_HZ);
   config.maxDurationSeconds = preferences.getUInt("max_duration", MAX_PATIENT_DURATION_SECONDS);
   config.manualControlAllowed = preferences.getBool("manual", true);
+  serverEnrollmentVerified = preferences.getBool("verified", false);
   deviceSequence = preferences.getUInt("sequence", 0);
+  preferences.end();
+}
+
+void saveLogicalDeviceId(const String &deviceId) {
+  config.deviceId = deviceId;
+  preferences.begin("neurosense", false);
+  preferences.putString("device_id", deviceId);
+  preferences.putBool("verified", false);
+  preferences.end();
+  serverEnrollmentVerified = false;
+}
+
+void saveEnrollmentVerified(bool verified) {
+  serverEnrollmentVerified = verified;
+  preferences.begin("neurosense", false);
+  preferences.putBool("verified", verified);
   preferences.end();
 }
 
@@ -372,7 +393,9 @@ void saveServerConfiguration(const String &apiBaseUrl, const String &apiToken) {
   preferences.begin("neurosense", false);
   preferences.putString("api_url", config.apiBaseUrl);
   preferences.putString("api_token", config.apiToken);
+  preferences.putBool("verified", false);
   preferences.end();
+  serverEnrollmentVerified = false;
 }
 
 void saveAssignment(const String &patientId, const String &assignmentId) {
@@ -381,7 +404,9 @@ void saveAssignment(const String &patientId, const String &assignmentId) {
   preferences.begin("neurosense", false);
   preferences.putString("patient_id", patientId);
   preferences.putString("assign_id", assignmentId);
+  preferences.putBool("verified", false);
   preferences.end();
+  serverEnrollmentVerified = false;
 }
 
 void saveCarePlan(float minHz, float targetHz, float maxHz,
@@ -555,6 +580,7 @@ void notifyOk(const String &command, JsonDocument *data) {
 void notifyStatus() {
   JsonDocument response;
   response["type"] = "status";
+  response["hardware_id"] = config.hardwareId;
   response["device_id"] = config.deviceId;
   response["display_name"] = config.displayName;
   response["firmware_version"] = FIRMWARE_VERSION;
@@ -564,6 +590,7 @@ void notifyStatus() {
   response["wifi_rssi"] = WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0;
   response["api_base_url"] = config.apiBaseUrl;
   response["api_configured"] = config.apiBaseUrl.length() > 0 && config.apiToken.length() > 0;
+  response["server_verified"] = serverEnrollmentVerified;
   response["provisioned"] = config.patientId.length() > 0 && config.assignmentId.length() > 0;
   response["patient_id"] = config.patientId;
   response["assignment_id"] = config.assignmentId;
@@ -603,6 +630,28 @@ void processBleCommand(const String &payload) {
     return;
   }
 
+  if (type == "set_identity") {
+    const String deviceId = command["device_id"] | "";
+    if (deviceId.length() < 3 || deviceId.length() > 128) {
+      notifyError(type, "invalid_device_id", "Device ID must contain 3-128 characters.");
+      return;
+    }
+    for (size_t index = 0; index < deviceId.length(); index++) {
+      const char value = deviceId[index];
+      if (!isalnum(static_cast<unsigned char>(value)) && value != '.' && value != '_' && value != ':' && value != '-') {
+        notifyError(type, "invalid_device_id", "Device ID contains unsupported characters.");
+        return;
+      }
+    }
+    if (config.deviceId.length() > 0 && config.deviceId != deviceId) {
+      notifyError(type, "identity_already_assigned", "Factory reset is required before assigning another Device ID.");
+      return;
+    }
+    saveLogicalDeviceId(deviceId);
+    notifyOk(type);
+    return;
+  }
+
   if (type == "set_wifi") {
     const String ssid = command["ssid"] | "";
     const String password = command["password"] | "";
@@ -616,6 +665,14 @@ void processBleCommand(const String &payload) {
     data["saved"] = true;
     data["connection_pending"] = true;
     data["ssid"] = ssid;
+    notifyOk(type, &data);
+    return;
+  }
+
+  if (type == "verify_enrollment") {
+    wifiConnectRequested = true;
+    JsonDocument data;
+    data["verification_pending"] = true;
     notifyOk(type, &data);
     return;
   }
@@ -666,6 +723,10 @@ void processBleCommand(const String &payload) {
     }
     if (config.patientId.length() == 0 || config.assignmentId.length() == 0) {
       notifyError(type, "device_not_assigned", "Patient and assignment configuration are required.");
+      return;
+    }
+    if (!serverEnrollmentVerified) {
+      notifyError(type, "enrollment_not_verified", "Complete Wi-Fi and server assignment verification before motor use.");
       return;
     }
     if (storageFault || countQueuedSessions() >= MAX_QUEUED_SESSIONS) {
@@ -1077,6 +1138,45 @@ bool connectWiFi(bool forceAttempt) {
   }
 
   Serial.println("Wi-Fi connection failed; sessions will remain queued");
+  return false;
+}
+
+bool verifyServerEnrollment() {
+  if (WiFi.status() != WL_CONNECTED || config.deviceId.length() == 0 ||
+      config.patientId.length() == 0 || config.assignmentId.length() == 0 ||
+      config.apiBaseUrl.length() == 0 || config.apiToken.length() == 0) return false;
+  if (!validApiBaseUrl(config.apiBaseUrl) || !ensureClockSynchronized()) return false;
+
+  JsonDocument request;
+  request["device_id"] = config.deviceId;
+  request["patient_id"] = config.patientId;
+  request["assignment_id"] = config.assignmentId;
+  String body;
+  serializeJson(request, body);
+
+  HTTPClient http;
+  WiFiClientSecure secureClient;
+  secureClient.setCACert(ISRG_ROOT_X1);
+  const String url = config.apiBaseUrl + "/api/device-check";
+  if (!http.begin(secureClient, url)) return false;
+  http.setConnectTimeout(12000);
+  http.setTimeout(15000);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("Authorization", String("Bearer ") + config.apiToken);
+  const int responseCode = http.POST(body);
+  const String responseBody = http.getString();
+  http.end();
+
+  if (responseCode == 200) {
+    JsonDocument response;
+    if (!deserializeJson(response, responseBody) && (response["verified"] | false)) {
+      saveEnrollmentVerified(true);
+      Serial.println("Server confirmed device and patient assignment");
+      return true;
+    }
+  }
+  if (responseCode == 401 || responseCode == 403 || responseCode == 409) saveEnrollmentVerified(false);
+  Serial.printf("Enrollment verification failed: HTTP %d, response=%s\n", responseCode, responseBody.c_str());
   return false;
 }
 

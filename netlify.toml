@@ -36,6 +36,12 @@
   force = true
 
 [[redirects]]
+  from = "/api/device-check"
+  to = "/.netlify/functions/device-check"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/api/patient-sync"
   to = "/.netlify/functions/patient-sync"
   status = 200

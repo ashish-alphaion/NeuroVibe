@@ -11,6 +11,7 @@ export default async (request) => {
     if (!token) throw new ApiError(401, "unauthorized", "A patient app session is required.");
     const body = await readSmallJson(request);
     const deviceId = String(body.device_id || "").trim();
+    const patientCode = String(body.patient_code || "").trim();
     if (!/^[A-Za-z0-9._:-]{3,128}$/.test(deviceId)) throw new ApiError(400, "invalid_device_id", "A valid device ID is required.");
 
     const supabase = getSupabaseAdmin();
@@ -25,11 +26,14 @@ export default async (request) => {
     }
 
     const { data: patient, error: patientError } = await supabase.from("patients")
-      .select("id, doctor_id, program_status")
+      .select("id, doctor_id, patient_code, program_status")
       .eq("user_id", profile.id).eq("organization_id", profile.organization_id).maybeSingle();
     if (patientError) throw patientError;
     if (!patient || !["enrolled", "active"].includes(patient.program_status)) {
       throw new ApiError(403, "patient_inactive", "The patient is not enrolled in an active program.");
+    }
+    if (!patientCode || patient.patient_code.toLowerCase() !== patientCode.toLowerCase()) {
+      throw new ApiError(403, "patient_id_mismatch", "The entered Patient ID does not match the signed-in patient.");
     }
 
     const { data: assignment, error: assignmentError } = await supabase.from("device_assignments")

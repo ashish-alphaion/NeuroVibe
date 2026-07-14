@@ -140,7 +140,7 @@ final class SupabaseAuthClient {
         executor.execute(() -> {
             try {
                 JSONObject response = requestJson("POST", "https://neurovibeapi.netlify.app/api/device-provisioning",
-                        session.accessToken, new JSONObject().put("device_id", deviceId));
+                        session.accessToken, new JSONObject().put("device_id", deviceId).put("patient_code", session.patientCode));
                 callback.onSuccess(new DeviceProvisioning(response));
             } catch (Exception error) {
                 callback.onError(friendlyMessage(error));
