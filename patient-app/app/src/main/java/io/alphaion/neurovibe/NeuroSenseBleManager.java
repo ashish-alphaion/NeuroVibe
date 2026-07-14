@@ -45,6 +45,7 @@ public final class NeuroSenseBleManager {
     private BluetoothLeScanner scanner;
     private BluetoothGatt gatt;
     private BluetoothGattCharacteristic command;
+    private String pendingDeviceName = "NeuroSense";
     private boolean scanning;
     private final StringBuilder framedJson = new StringBuilder();
     private boolean receivingJson;
@@ -131,6 +132,7 @@ public final class NeuroSenseBleManager {
 
         @SuppressLint("MissingPermission")
         @Override public void onServicesDiscovered(BluetoothGatt current, int status) {
+            if (status != BluetoothGatt.GATT_SUCCESS) { main.post(() -> listener.onError("NeuroSense service discovery failed.")); return; }
             BluetoothGattService service = current.getService(SERVICE_UUID);
             if (service == null) { main.post(() -> listener.onError("This is not a compatible NeuroSense device.")); return; }
             command = service.getCharacteristic(COMMAND_UUID);
@@ -138,12 +140,22 @@ public final class NeuroSenseBleManager {
             if (command == null || response == null) { main.post(() -> listener.onError("NeuroSense BLE characteristics are missing.")); return; }
             current.setCharacteristicNotification(response, true);
             BluetoothGattDescriptor descriptor = response.getDescriptor(CCCD_UUID);
-            if (descriptor != null) {
-                if (Build.VERSION.SDK_INT >= 33) current.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-                else { descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE); current.writeDescriptor(descriptor); }
-            }
             String name = current.getDevice().getName();
-            main.post(() -> listener.onConnectionChanged(true, name == null ? "NeuroSense" : name));
+            pendingDeviceName = name == null ? "NeuroSense" : name;
+            if (descriptor == null) { main.post(() -> listener.onError("NeuroSense notification channel is unavailable.")); return; }
+            if (Build.VERSION.SDK_INT >= 33) {
+                int result = current.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+                if (result != 0) main.post(() -> listener.onError("Could not enable NeuroSense responses."));
+            } else {
+                descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+                if (!current.writeDescriptor(descriptor)) main.post(() -> listener.onError("Could not enable NeuroSense responses."));
+            }
+        }
+
+        @Override public void onDescriptorWrite(BluetoothGatt current, BluetoothGattDescriptor descriptor, int status) {
+            if (!CCCD_UUID.equals(descriptor.getUuid())) return;
+            if (status == BluetoothGatt.GATT_SUCCESS) main.post(() -> listener.onConnectionChanged(true, pendingDeviceName));
+            else main.post(() -> listener.onError("NeuroSense responses could not be enabled."));
         }
 
         @Override public void onCharacteristicChanged(BluetoothGatt current, BluetoothGattCharacteristic characteristic, byte[] value) { consume(value); }

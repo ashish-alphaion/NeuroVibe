@@ -38,11 +38,15 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import org.json.JSONObject;
+import org.json.JSONArray;
 
+import java.text.SimpleDateFormat;
 import java.util.LinkedHashMap;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.Locale;
 import java.util.Map;
+import java.util.TimeZone;
 
 public final class MainActivity extends Activity implements NeuroSenseBleManager.Listener {
     private static final int NAVY = Color.rgb(0, 29, 50);
@@ -107,7 +111,7 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
         TextView badge = label("NEUROSENSE", 12); badge.setTextColor(Color.WHITE); badge.setGravity(Gravity.CENTER); badge.setBackground(round(NAVY_CARD, 20)); FrameLayout.LayoutParams bp = new FrameLayout.LayoutParams(dp(150), dp(34), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL); bp.bottomMargin = dp(28); hero.addView(badge, bp);
         page.addView(hero, margin(dp(280), dp(280), 0, 0, 0, 30));
         TextView h = title("Welcome to NeuroVibe", 28); h.setGravity(Gravity.CENTER); page.addView(h);
-        TextView p = body("Connect to your assigned NeuroSense device and follow sessions scheduled by your doctor.", 16); p.setGravity(Gravity.CENTER); page.addView(p, margin(-1, -2, 18, 14, 18, 32));
+        TextView p = body("View clinic appointments, set up your assigned NeuroSense, and review vibration usage in one place.", 16); p.setGravity(Gravity.CENTER); page.addView(p, margin(-1, -2, 18, 14, 18, 32));
         Button invite = primary("I Have an Invitation"); invite.setOnClickListener(v -> showAccess(true)); page.addView(invite, margin(-1, 52, 0, 0, 0, 12));
         Button signIn = outline("Sign In"); signIn.setOnClickListener(v -> showAccess(false)); page.addView(signIn, margin(-1, 52, 0, 0, 0, 12));
         Button help = textButton("?  Get Help"); help.setOnClickListener(v -> helpDialog()); page.addView(help);
@@ -217,10 +221,19 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
         LinearLayout page = page(true); addHeader(page, "Welcome, " + patientName);
         boolean hasPlan = patientSession.carePlanName != null;
         TextView intro = body(hasPlan ? "Your prescribed care plan is available." : "Your device is assigned, but your doctor has not created an active care plan.", 15); page.addView(intro, margin(-1, -2, 0, 2, 0, 22));
+        JSONObject nextAppointment = nextAppointment();
+        if (nextAppointment != null) {
+            LinearLayout appointment = card(Color.WHITE);
+            TextView appointmentLabel = label("NEXT DOCTOR APPOINTMENT", 11); appointmentLabel.setTextColor(BLUE); appointment.addView(appointmentLabel);
+            appointment.addView(title(nextAppointment.optString("title", "Clinic appointment"), 20), margin(-1,-2,0,8,0,4));
+            appointment.addView(body(formatAppointment(nextAppointment), 14));
+            appointment.setOnClickListener(v -> showSchedule());
+            page.addView(appointment, margin(-1,-2,0,0,0,16));
+        }
         LinearLayout therapy = card(NAVY_CARD); TextView eyebrow = label(hasPlan ? patientSession.carePlanName.toUpperCase(Locale.US) : "CARE PLAN REQUIRED", 11); eyebrow.setTextColor(Color.rgb(142,205,255)); therapy.addView(eyebrow);
         TextView plan = title(hasPlan ? formatHz(patientSession.targetHz) + " Hz · " + Math.round(patientSession.durationSeconds / 60.0) + " minutes" : "No active prescription", 25); plan.setTextColor(Color.WHITE); therapy.addView(plan, margin(-1,-2,0,10,0,8));
         TextView range = body(hasPlan ? "Doctor-approved range: " + formatHz(patientSession.minHz) + "–" + formatHz(patientSession.maxHz) + " Hz" : "Ask your doctor to create a care plan before using vibration output.", 14); range.setTextColor(Color.rgb(203,230,255)); therapy.addView(range);
-        Button start = accent(deviceVerified && hasPlan ? "Start Session" : deviceVerified ? "Care plan required" : "Set up assigned device"); start.setEnabled(hasPlan); start.setOnClickListener(v -> { if (!deviceVerified) showConnect(); else startSession(); }); therapy.addView(start, margin(-1,50,0,22,0,0)); page.addView(therapy);
+        Button start = accent(deviceVerified && hasPlan ? "Start vibration" : deviceVerified ? "Care plan required" : "Set up assigned device"); start.setEnabled(hasPlan); start.setOnClickListener(v -> { if (!deviceVerified) showConnect(); else startSession(); }); therapy.addView(start, margin(-1,50,0,22,0,0)); page.addView(therapy);
         connectionLabel = label(deviceVerified ? "●  " + connectedName + " verified" : "○  Assigned NeuroSense not verified", 12); connectionLabel.setTextColor(deviceVerified ? GREEN : RED); connectionLabel.setOnClickListener(v -> showConnect()); page.addView(connectionLabel, margin(-1,-2,2,14,0,22));
         page.addView(title("Assignment", 20), margin(-1,-2,0,0,0,12));
         LinearLayout metrics = row(); metrics.addView(metric(patientSession.assignedDeviceName == null ? "Assigned" : patientSession.assignedDeviceName, "Device", "✓"), weight()); metrics.addView(metric(deviceVerified ? "Verified" : "Setup", "Status", deviceVerified ? "✓" : "!"), weightWithLeft()); page.addView(metrics);
@@ -230,14 +243,44 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
     }
 
     private void showSchedule() {
-        LinearLayout page = page(true); addHeader(page, "My Schedule");
-        page.addView(body("No synchronized schedules are available yet. New sessions created by your doctor will appear after the next account refresh.", 15), margin(-1,-2,0,2,0,22));
+        LinearLayout page = page(true); addHeader(page, "My Appointments");
+        page.addView(body("Visits scheduled by your doctor. Using NeuroSense is recorded separately under Device Usage.", 15), margin(-1,-2,0,2,0,18));
+        JSONArray appointments = patientSession == null ? null : patientSession.appointments;
+        if (appointments == null || appointments.length() == 0) {
+            page.addView(emptyCard("No upcoming appointments", "New clinic, video, phone, or home visits assigned by your doctor will appear here."));
+        } else {
+            for (int index = 0; index < appointments.length(); index++) {
+                JSONObject appointment = appointments.optJSONObject(index);
+                if (appointment == null) continue;
+                LinearLayout card = card(Color.WHITE);
+                TextView type = label(appointment.optString("appointment_type", "clinic").replace('_', ' ').toUpperCase(Locale.US), 11); type.setTextColor(BLUE); card.addView(type);
+                card.addView(title(appointment.optString("title", "Doctor appointment"), 20), margin(-1,-2,0,8,0,5));
+                card.addView(body(formatAppointment(appointment), 14));
+                String notes = appointment.optString("notes", "");
+                if (!notes.isEmpty()) card.addView(body(notes, 13), margin(-1,-2,0,10,0,0));
+                page.addView(card, margin(-1,-2,0,0,0,12));
+            }
+        }
         setScrollable(page); addBottomNav("schedule");
     }
 
     private void showHistory() {
-        LinearLayout page = page(true); addHeader(page, "Session History");
-        page.addView(body("No synchronized session history is available yet. Completed device sessions will appear after Wi-Fi synchronization.", 15), margin(-1,-2,0,2,0,22));
+        LinearLayout page = page(true); addHeader(page, "Device Usage");
+        page.addView(body("Vibration runs recorded by NeuroSense. These are not doctor appointments.", 15), margin(-1,-2,0,2,0,18));
+        JSONArray usage = patientSession == null ? null : patientSession.deviceUsage;
+        if (usage == null || usage.length() == 0) {
+            page.addView(emptyCard("No device usage recorded", "Completed vibration runs will appear after the device or app synchronizes them."));
+        } else {
+            for (int index = 0; index < usage.length(); index++) {
+                JSONObject run = usage.optJSONObject(index);
+                if (run == null) continue;
+                LinearLayout item = card(Color.WHITE);
+                item.addView(title(formatIso(run.optString("started_at_utc")), 18));
+                double measured = run.has("measured_hz") && !run.isNull("measured_hz") ? run.optDouble("measured_hz") : run.optDouble("estimated_hz", run.optDouble("requested_hz"));
+                item.addView(body(formatHz(measured) + " Hz · " + Math.round(run.optInt("duration_seconds") / 60.0) + " min · " + run.optString("status", "recorded"), 14));
+                page.addView(item, margin(-1,-2,0,0,0,10));
+            }
+        }
         setScrollable(page); addBottomNav("history");
     }
 
@@ -284,7 +327,7 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
             if (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) permissions.add(Manifest.permission.BLUETOOTH_CONNECT);
         } else if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) permissions.add(Manifest.permission.ACCESS_FINE_LOCATION);
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) permissions.add(Manifest.permission.POST_NOTIFICATIONS);
-        if (!permissions.isEmpty()) requestPermissions(permissions.toArray(new String[0]), 45); else postDemoReminder();
+        if (!permissions.isEmpty()) requestPermissions(permissions.toArray(new String[0]), 45); else postAppointmentReminder();
     }
 
     @SuppressLint("MissingPermission") private void beginScan() {
@@ -295,7 +338,7 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
         super.onRequestPermissionsResult(requestCode, permissions, results);
         if (requestCode == 44 && results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) beginScan();
         else if (requestCode == 44) toast("Bluetooth permission is required to control NeuroSense.");
-        if (requestCode == 45) { toast("Permissions updated. You can change them later in Android Settings."); postDemoReminder(); }
+        if (requestCode == 45) { toast("Permissions updated. You can change them later in Android Settings."); postAppointmentReminder(); }
     }
 
     private void startSession() {
@@ -309,7 +352,7 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
         int sessionDuration = patientSession == null ? 0 : patientSession.durationSeconds;
         if (sessionDuration <= 0) { toast("The care plan duration is invalid."); showHome(); return; }
         if (sessionTimer != null) sessionTimer.cancel(); remainingSeconds = sessionDuration;
-        LinearLayout page = page(false); addHeader(page, "Active Session");
+        LinearLayout page = page(false); addHeader(page, "Vibration Running");
         TextView status = label("● BLUETOOTH CONNECTED", 11); status.setTextColor(GREEN); status.setGravity(Gravity.CENTER); page.addView(status);
         ProgressBar progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal); progress.setMax(sessionDuration); progress.setProgress(0); page.addView(progress, margin(-1,8,0,16,0,26));
         TextView timer = title(String.format(Locale.US, "%02d:%02d", sessionDuration / 60, sessionDuration % 60), 48); timer.setGravity(Gravity.CENTER); page.addView(timer);
@@ -322,7 +365,7 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
             public void onStartTrackingTouch(SeekBar bar) {}
             public void onStopTrackingTouch(SeekBar bar) { try { ble.send(new JSONObject().put("type", "set_frequency").put("hz", selectedHz)); } catch (Exception e) { toast(e.getMessage()); } }
         });
-        Button end = outline("End Session"); end.setOnClickListener(v -> confirmStop(false)); controls.addView(end, margin(-1,50,0,18,0,0)); page.addView(controls);
+        Button end = outline("Stop vibration"); end.setOnClickListener(v -> confirmStop(false)); controls.addView(end, margin(-1,50,0,18,0,0)); page.addView(controls);
         Button emergency = danger("⚠  EMERGENCY STOP"); emergency.setOnClickListener(v -> confirmStop(true)); page.addView(emergency, margin(-1,58,0,22,0,8));
         TextView safety = body("Emergency stop immediately terminates all vibration output.", 12); safety.setGravity(Gravity.CENTER); page.addView(safety);
         setScrollable(page);
@@ -333,7 +376,7 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
     }
 
     private void confirmStop(boolean emergency) {
-        new AlertDialog.Builder(this).setTitle(emergency ? "Emergency stop?" : "End this session?").setMessage(emergency ? "All vibration output will stop immediately." : "The partial session will be saved.").setNegativeButton("Cancel", null).setPositiveButton(emergency ? "STOP" : "End", (d,w) -> {
+        new AlertDialog.Builder(this).setTitle(emergency ? "Emergency stop?" : "Stop vibration?").setMessage(emergency ? "All vibration output will stop immediately." : "The partial device-usage record will be saved.").setNegativeButton("Cancel", null).setPositiveButton(emergency ? "STOP" : "Stop", (d,w) -> {
             if (sessionTimer != null) sessionTimer.cancel(); ble.sendType(emergency ? "emergency_stop" : "stop_session"); showCompletion(true);
         }).show();
     }
@@ -341,7 +384,7 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
     private void showCompletion(boolean stopped) {
         LinearLayout page = page(false); page.setGravity(Gravity.CENTER_HORIZONTAL);
         TextView check = title(stopped ? "!" : "✓", 54); check.setTextColor(Color.WHITE); check.setGravity(Gravity.CENTER); check.setBackground(round(stopped ? RED : GREEN, 70)); page.addView(check, margin(110,110,0,70,0,22));
-        page.addView(title(stopped ? "Session ended safely" : "Session complete", 28)); TextView text = body(stopped ? "The device has stopped and the partial record will synchronize." : "Your prescribed vibration cycle finished successfully.", 15); text.setGravity(Gravity.CENTER); page.addView(text, margin(-1,-2,18,12,18,28));
+        page.addView(title(stopped ? "Vibration stopped safely" : "Vibration complete", 28)); TextView text = body(stopped ? "The device has stopped and the partial usage record will synchronize." : "Your prescribed vibration cycle finished successfully.", 15); text.setGravity(Gravity.CENTER); page.addView(text, margin(-1,-2,18,12,18,28));
         Button home = primary("Return to Dashboard"); home.setOnClickListener(v -> showHome()); page.addView(home, margin(-1,54,0,0,0,12));
         Button symptoms = outline("Log how I feel"); symptoms.setOnClickListener(v -> symptomDialog()); page.addView(symptoms, margin(-1,54,0,0,0,0)); setScrollable(page);
     }
@@ -479,21 +522,23 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
 
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= 26) {
-            NotificationChannel channel = new NotificationChannel("therapy_reminders", "Therapy reminders", NotificationManager.IMPORTANCE_DEFAULT);
-            channel.setDescription("Patient reminders for doctor-scheduled NeuroVibe sessions");
+            NotificationChannel channel = new NotificationChannel("appointment_reminders", "Doctor appointment reminders", NotificationManager.IMPORTANCE_DEFAULT);
+            channel.setDescription("Alerts for clinic, video, phone, and home-visit appointments");
             channel.enableVibration(true);
             getSystemService(NotificationManager.class).createNotificationChannel(channel);
         }
     }
 
-    @SuppressLint("MissingPermission") private void postDemoReminder() {
+    @SuppressLint("MissingPermission") private void postAppointmentReminder() {
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return;
+        JSONObject appointment = nextAppointment();
+        if (appointment == null) return;
         Intent intent = new Intent(this, MainActivity.class);
         PendingIntent pending = PendingIntent.getActivity(this, 10, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        Notification notification = new Notification.Builder(this, "therapy_reminders")
+        Notification notification = new Notification.Builder(this, "appointment_reminders")
                 .setSmallIcon(io.alphaion.neurovibe.R.drawable.ic_neurovibe)
-                .setContentTitle("NeuroVibe session ready")
-                .setContentText(patientSession != null && patientSession.carePlanName != null ? patientSession.carePlanName + " is ready." : "Open NeuroVibe to review your care plan.")
+                .setContentTitle(appointment.optString("title", "Upcoming doctor appointment"))
+                .setContentText(formatAppointment(appointment))
                 .setContentIntent(pending).setAutoCancel(true).build();
         getSystemService(NotificationManager.class).notify(1001, notification);
     }
@@ -504,11 +549,52 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
 
     private void addBottomNav(String active) {
         LinearLayout nav = row(); nav.setPadding(dp(10), dp(7), dp(10), dp(7)); nav.setBackground(round(Color.WHITE, 18));
-        nav.addView(navButton("⌂\nHome", active.equals("home"), this::showHome), weight()); nav.addView(navButton("□\nSchedule", active.equals("schedule"), this::showSchedule), weight()); nav.addView(navButton("◷\nHistory", active.equals("history"), this::showHistory), weight()); nav.addView(navButton("•••\nMore", active.equals("more"), this::showMore), weight());
+        nav.addView(navButton("⌂\nHome", active.equals("home"), this::showHome), weight()); nav.addView(navButton("□\nAppointments", active.equals("schedule"), this::showSchedule), weight()); nav.addView(navButton("◷\nUsage", active.equals("history"), this::showHistory), weight()); nav.addView(navButton("•••\nMore", active.equals("more"), this::showMore), weight());
         FrameLayout.LayoutParams np = new FrameLayout.LayoutParams(-1, dp(72), Gravity.BOTTOM); np.setMargins(dp(12),0,dp(12),dp(10)); root.addView(nav,np);
     }
 
-    private View scheduleCard(String when, String name, String prescription, boolean ready) { LinearLayout c=card(Color.WHITE); TextView e=label(when,11);e.setTextColor(BLUE);c.addView(e);c.addView(title(name,19),margin(-1,-2,0,8,0,5));c.addView(body(prescription,14));if(ready){Button b=primary("Start session");b.setOnClickListener(v->{if(connected)startSession();else showConnect();});c.addView(b,margin(-1,48,0,14,0,0));}return c; }
+    private JSONObject nextAppointment() {
+        JSONArray values = patientSession == null ? null : patientSession.appointments;
+        if (values == null) return null;
+        long now = System.currentTimeMillis();
+        for (int index = 0; index < values.length(); index++) {
+            JSONObject value = values.optJSONObject(index);
+            if (value == null) continue;
+            Date date = parseIso(value.optString("scheduled_for"));
+            if (date != null && date.getTime() >= now) return value;
+        }
+        return null;
+    }
+
+    private String formatAppointment(JSONObject appointment) {
+        String date = formatIso(appointment.optString("scheduled_for"));
+        int minutes = appointment.optInt("duration_minutes", 30);
+        String location = appointment.optString("location", "");
+        return date + " · " + minutes + " min" + (location.isEmpty() ? "" : "\n" + location);
+    }
+
+    private Date parseIso(String value) {
+        if (value == null || value.isEmpty()) return null;
+        String[] patterns = {"yyyy-MM-dd'T'HH:mm:ss.SSSXXX", "yyyy-MM-dd'T'HH:mm:ssXXX", "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", "yyyy-MM-dd'T'HH:mm:ss'Z'"};
+        for (String pattern : patterns) {
+            try { SimpleDateFormat parser = new SimpleDateFormat(pattern, Locale.US); parser.setTimeZone(TimeZone.getTimeZone("UTC")); return parser.parse(value); }
+            catch (Exception ignored) { }
+        }
+        return null;
+    }
+
+    private String formatIso(String value) {
+        Date date = parseIso(value);
+        if (date == null) return "Date unavailable";
+        return new SimpleDateFormat("EEE, d MMM yyyy · h:mm a", Locale.getDefault()).format(date);
+    }
+
+    private View emptyCard(String heading, String message) {
+        LinearLayout view = card(Color.WHITE);
+        view.addView(title(heading, 19));
+        view.addView(body(message, 14), margin(-1,-2,0,7,0,0));
+        return view;
+    }
     private View historyCard(String when,String hz,String duration,String status){LinearLayout c=card(Color.WHITE);LinearLayout r=row();LinearLayout info=column(Gravity.START,3);info.addView(title(when,16));info.addView(body(hz+" · "+duration,13));r.addView(info,weight());TextView s=label(status,10);s.setTextColor(status.equals("Completed")?GREEN:RED);r.addView(s);c.addView(r);return c;}
     private View metric(String value,String name,String icon){LinearLayout c=card(Color.WHITE);TextView i=title(icon,20);i.setTextColor(BLUE);c.addView(i);c.addView(title(value,26));c.addView(body(name,12));return c;}
     private Button menuButton(String name,String sub,Runnable action){Button b=outline(name+"\n"+sub+"   ›");b.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);b.setAllCaps(false);b.setOnClickListener(v->action.run());b.setMinHeight(dp(68));return b;}

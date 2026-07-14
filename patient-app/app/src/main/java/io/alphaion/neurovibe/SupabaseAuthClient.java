@@ -45,11 +45,14 @@ final class SupabaseAuthClient {
         final int durationSeconds;
         final int maxDurationSeconds;
         final boolean manualControlAllowed;
+        final JSONArray appointments;
+        final JSONArray deviceUsage;
 
         PatientSession(String accessToken, String userId, String patientId, String fullName, String patientCode,
                        String assignmentId, String assignedDeviceId, String assignedDeviceName,
                        String carePlanName, double minHz, double targetHz, double maxHz,
-                       int durationSeconds, int maxDurationSeconds, boolean manualControlAllowed) {
+                       int durationSeconds, int maxDurationSeconds, boolean manualControlAllowed,
+                       JSONArray appointments, JSONArray deviceUsage) {
             this.accessToken = accessToken;
             this.userId = userId;
             this.patientId = patientId;
@@ -65,6 +68,8 @@ final class SupabaseAuthClient {
             this.durationSeconds = durationSeconds;
             this.maxDurationSeconds = maxDurationSeconds;
             this.manualControlAllowed = manualControlAllowed;
+            this.appointments = appointments;
+            this.deviceUsage = deviceUsage;
         }
     }
 
@@ -137,6 +142,15 @@ final class SupabaseAuthClient {
         JSONObject assignment = findByStatus(patient.optJSONArray("device_assignments"), "active");
         JSONObject plan = findByStatus(patient.optJSONArray("care_plans"), "active");
         JSONObject device = assignment == null ? null : assignment.optJSONObject("devices");
+        String patientId = patient.getString("id");
+        String appointmentSelect = URLEncoder.encode("id,title,appointment_type,scheduled_for,duration_minutes,location,notes,status", StandardCharsets.UTF_8.name());
+        JSONArray appointments;
+        try { appointments = requestArray("/rest/v1/appointments?select=" + appointmentSelect + "&patient_id=eq." + patientId + "&status=in.(scheduled,confirmed)&order=scheduled_for.asc", token); }
+        catch (Exception unavailable) { appointments = new JSONArray(); }
+        String usageSelect = URLEncoder.encode("id,started_at_utc,duration_seconds,requested_hz,measured_hz,estimated_hz,status,completion_reason,sync_source", StandardCharsets.UTF_8.name());
+        JSONArray deviceUsage;
+        try { deviceUsage = requestArray("/rest/v1/therapy_sessions?select=" + usageSelect + "&patient_id=eq." + patientId + "&order=started_at_utc.desc&limit=50", token); }
+        catch (Exception unavailable) { deviceUsage = new JSONArray(); }
         return new PatientSession(token, userId, patient.getString("id"), patient.getString("full_name"), patient.getString("patient_code"),
                 assignment == null ? null : assignment.optString("id", null),
                 assignment == null ? null : assignment.optString("device_id", null),
@@ -147,7 +161,7 @@ final class SupabaseAuthClient {
                 plan == null ? 0 : plan.optDouble("max_hz", 0),
                 plan == null ? 0 : plan.optInt("duration_seconds", 0),
                 plan == null ? 0 : plan.optInt("max_duration_seconds", 0),
-                plan != null && plan.optBoolean("manual_control_allowed", false));
+                plan != null && plan.optBoolean("manual_control_allowed", false), appointments, deviceUsage);
     }
 
     private JSONObject findByStatus(JSONArray values, String status) {

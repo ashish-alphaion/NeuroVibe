@@ -24,15 +24,21 @@ Board: ESP32C3 Dev Module
 USB CDC On Boot: Enabled
 Upload Speed: 921600 or a stable lower value
 Flash Size: 4MB (32Mb)
-Partition Scheme: the sketch-local partitions.csv is used automatically
+Partition Scheme: No OTA (2MB APP/2MB SPIFFS)
 Serial Monitor: 115200 baud
 ```
 
-The included `partitions.csv` provides a 2 MB application partition and a
-1.94 MB LittleFS partition. The full Wi-Fi + BLE + TLS firmware is larger than
-the default 1.25 MB application partition, so do not compile this sketch with
-the default partition table. This prototype layout has no OTA update slot;
-upload firmware over USB.
+The full Wi-Fi + BLE + TLS firmware is larger than the default 1.25 MB
+application partition. Select **No OTA (2MB APP/2MB SPIFFS)** before compiling.
+The included `partitions.csv` documents the equivalent prototype layout, but
+Arduino CLI/IDE board settings determine the partition used for compilation.
+This layout has no OTA slot; upload firmware over USB.
+
+Equivalent CLI compile command:
+
+```text
+arduino-cli compile --fqbn esp32:esp32:esp32c3:CDCOnBoot=cdc,PartitionScheme=no_ota NeuroVibe
+```
 
 The BLE implementation follows the Arduino-ESP32 BLE server pattern documented by Espressif. ArduinoJson 7 is used for command parsing and session serialization.
 

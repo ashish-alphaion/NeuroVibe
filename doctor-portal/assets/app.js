@@ -85,8 +85,8 @@ function portalShell(profile) {
     ["patients", "patients.html", "group", "Patients"],
     ["devices", "devices.html", "precision_manufacturing", "Devices"],
     ["care-plans", "care-plans.html", "assignment", "Care Plans"],
-    ["schedules", "schedules.html", "calendar_month", "Schedules"],
-    ["sessions", "sessions.html", "monitor_heart", "Sessions"],
+    ["schedules", "schedules.html", "calendar_month", "Appointments"],
+    ["sessions", "sessions.html", "monitor_heart", "Device Usage"],
     ["reports", "reports.html", "assessment", "Reports"],
     ["alerts", "alerts.html", "warning", "Alerts"],
     ["audit", "audit.html", "history", "Audit Log"],
@@ -122,34 +122,34 @@ async function initializePortal() {
 async function loadDashboard() {
   const start = new Date(); start.setHours(0, 0, 0, 0);
   const end = new Date(start); end.setDate(end.getDate() + 1);
-  const [patientsResult, assignedResult, availableResult, missedResult, schedulesResult, faultyResult, auditResult] = await Promise.all([
+  const [patientsResult, assignedResult, availableResult, missedResult, appointmentsResult, faultyResult, auditResult] = await Promise.all([
     supabase.from("patients").select("id", { count: "exact", head: true }).in("program_status", ["enrolled", "active"]),
     supabase.from("devices").select("id", { count: "exact", head: true }).in("lifecycle_status", ["assigned", "active"]),
     supabase.from("devices").select("id", { count: "exact", head: true }).eq("lifecycle_status", "available"),
-    supabase.from("scheduled_sessions").select("id", { count: "exact", head: true }).eq("status", "missed").gte("scheduled_for", start.toISOString()).lt("scheduled_for", end.toISOString()),
-    supabase.from("scheduled_sessions").select("id, scheduled_for, target_hz, duration_seconds, status, patients(id, full_name, patient_code), care_plans(name)").gte("scheduled_for", start.toISOString()).lt("scheduled_for", end.toISOString()).order("scheduled_for").limit(8),
+    supabase.from("appointments").select("id", { count: "exact", head: true }).eq("status", "no_show").gte("scheduled_for", start.toISOString()).lt("scheduled_for", end.toISOString()),
+    supabase.from("appointments").select("id, title, appointment_type, scheduled_for, duration_minutes, location, status, patients(id, full_name, patient_code)").gte("scheduled_for", start.toISOString()).lt("scheduled_for", end.toISOString()).order("scheduled_for").limit(8),
     supabase.from("devices").select("id, display_name, lifecycle_status, last_seen_at").eq("lifecycle_status", "faulty").limit(3),
     supabase.from("audit_events").select("id, action, summary, created_at").order("created_at", { ascending: false }).limit(5),
   ]);
-  const errors = [patientsResult, assignedResult, availableResult, missedResult, schedulesResult, faultyResult, auditResult].filter((result) => result.error);
+  const errors = [patientsResult, assignedResult, availableResult, missedResult, appointmentsResult, faultyResult, auditResult].filter((result) => result.error);
   if (errors.length) showToast("Some dashboard data could not be loaded.");
   $("#active-patients").textContent = patientsResult.count ?? 0;
   $("#assigned-devices").textContent = assignedResult.count ?? 0;
   $("#available-devices").textContent = availableResult.count ?? 0;
   $("#missed-sessions").textContent = missedResult.count ?? 0;
   $("#today-label").textContent = new Intl.DateTimeFormat(undefined, { dateStyle: "full" }).format(new Date());
-  renderTodaySchedules(schedulesResult.data ?? []);
+  renderTodayAppointments(appointmentsResult.data ?? []);
   renderAttention(faultyResult.data ?? []);
   renderActivity(auditResult.data ?? []);
 }
 
-function renderTodaySchedules(schedules) {
+function renderTodayAppointments(appointments) {
   const body = $("#today-sessions");
-  if (!schedules.length) {
-    body.innerHTML = `<tr><td colspan="5"><div class="empty-state"><span class="material-symbols-outlined">event_available</span><h3>No sessions today</h3><p>The schedule is clear.</p></div></td></tr>`;
+  if (!appointments.length) {
+    body.innerHTML = `<tr><td colspan="5"><div class="empty-state"><span class="material-symbols-outlined">event_available</span><h3>No appointments today</h3><p>No patient visits are scheduled.</p></div></td></tr>`;
     return;
   }
-  body.innerHTML = schedules.map((item) => `<tr><td><strong>${new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(item.scheduled_for))}</strong></td><td><div class="person-cell"><span class="person-avatar">${escapeHtml(initials(item.patients?.full_name))}</span><span><strong>${escapeHtml(item.patients?.full_name || "Patient")}</strong><small>${escapeHtml(item.patients?.patient_code || "")}</small></span></div></td><td>${escapeHtml(item.care_plans?.name || `${item.target_hz} Hz plan`)}</td><td><span class="pill ${statusClass(item.status)}">${escapeHtml(item.status)}</span></td><td><a class="icon-button" href="patient.html?id=${encodeURIComponent(item.patients?.id || "")}" aria-label="Open patient"><span class="material-symbols-outlined">open_in_new</span></a></td></tr>`).join("");
+  body.innerHTML = appointments.map((item) => `<tr><td><strong>${new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(item.scheduled_for))}</strong><small class="table-sub">${item.duration_minutes} min</small></td><td><div class="person-cell"><span class="person-avatar">${escapeHtml(initials(item.patients?.full_name))}</span><span><strong>${escapeHtml(item.patients?.full_name || "Patient")}</strong><small>${escapeHtml(item.patients?.patient_code || "")}</small></span></div></td><td><strong>${escapeHtml(item.title)}</strong><small class="table-sub">${escapeHtml(item.location || item.appointment_type.replaceAll("_", " "))}</small></td><td><span class="pill ${statusClass(item.status)}">${escapeHtml(item.status)}</span></td><td><a class="icon-button" href="patient.html?id=${encodeURIComponent(item.patients?.id || "")}" aria-label="Open patient"><span class="material-symbols-outlined">open_in_new</span></a></td></tr>`).join("");
 }
 
 function renderAttention(devices) {
@@ -172,7 +172,7 @@ function renderActivity(events) {
 
 let patientRows = [];
 async function loadPatients() {
-  const result = await supabase.from("patients").select(`id, patient_code, full_name, program_status, updated_at, device_assignments(id, status, device_id, devices(id, display_name, lifecycle_status)), care_plans(id, name, status), scheduled_sessions(id, scheduled_for, status)`).order("created_at", { ascending: false }).limit(250);
+  const result = await supabase.from("patients").select(`id, patient_code, full_name, program_status, updated_at, device_assignments(id, status, device_id, devices(id, display_name, lifecycle_status)), care_plans(id, name, status), appointments(id, scheduled_for, status)`).order("created_at", { ascending: false }).limit(250);
   if (result.error) {
     $("#patient-body").innerHTML = `<tr><td colspan="7"><div class="empty-state"><span class="material-symbols-outlined">error</span><h3>Patients unavailable</h3><p>${escapeHtml(result.error.message)}</p></div></td></tr>`;
     return;
@@ -222,7 +222,7 @@ function renderPatientTable() {
   body.innerHTML = rows.map((patient) => {
     const assignment = patient.device_assignments?.find((item) => item.status === "active");
     const plan = patient.care_plans?.find((item) => item.status === "active");
-    const next = patient.scheduled_sessions?.filter((item) => item.status === "scheduled" && new Date(item.scheduled_for) > new Date()).sort((a, b) => new Date(a.scheduled_for) - new Date(b.scheduled_for))[0];
+    const next = patient.appointments?.filter((item) => ["scheduled", "confirmed"].includes(item.status) && new Date(item.scheduled_for) > new Date()).sort((a, b) => new Date(a.scheduled_for) - new Date(b.scheduled_for))[0];
     return `<tr data-patient-id="${escapeHtml(patient.id)}"><td><div class="person-cell"><span class="person-avatar">${escapeHtml(initials(patient.full_name))}</span><span><strong>${escapeHtml(patient.full_name)}</strong><small>Updated ${escapeHtml(formatDateTime(patient.updated_at))}</small></span></div></td><td><code>${escapeHtml(patient.patient_code)}</code></td><td><span class="pill ${statusClass(patient.program_status)}">${escapeHtml(patient.program_status)}</span></td><td>${escapeHtml(assignment?.devices?.display_name || "Unassigned")}</td><td>${escapeHtml(plan?.name || "No active plan")}</td><td>${escapeHtml(formatDateTime(next?.scheduled_for))}</td><td><a class="icon-button" href="patient.html?id=${encodeURIComponent(patient.id)}" aria-label="View ${escapeHtml(patient.full_name)}"><span class="material-symbols-outlined">visibility</span></a></td></tr>`;
   }).join("");
 }
@@ -231,7 +231,7 @@ async function loadPatientDetail(auth) {
   const id = new URLSearchParams(location.search).get("id");
   if (!id) { location.replace(new URL("patients.html", document.baseURI)); return; }
   const [patientResult, sessionsResult] = await Promise.all([
-    supabase.from("patients").select(`id, patient_code, full_name, date_of_birth, gender, phone, email, program_status, consent_status, device_assignments(id, status, starts_at, devices(id, display_name, lifecycle_status, firmware_version, last_seen_at, pending_record_count)), care_plans(id, name, status, min_hz, target_hz, max_hz, duration_seconds, max_duration_seconds, manual_control_allowed), scheduled_sessions(id, scheduled_for, target_hz, duration_seconds, status)`).eq("id", id).maybeSingle(),
+    supabase.from("patients").select(`id, patient_code, full_name, date_of_birth, gender, phone, email, program_status, consent_status, device_assignments(id, status, starts_at, devices(id, display_name, lifecycle_status, firmware_version, last_seen_at, pending_record_count)), care_plans(id, name, status, min_hz, target_hz, max_hz, duration_seconds, max_duration_seconds, manual_control_allowed), appointments(id, title, scheduled_for, location, status)`).eq("id", id).maybeSingle(),
     supabase.from("therapy_sessions").select("id, started_at_utc, duration_seconds, requested_hz, estimated_hz, status, completion_reason, sync_source").eq("patient_id", id).order("started_at_utc", { ascending: false }).limit(20),
   ]);
   if (patientResult.error || !patientResult.data) {
@@ -268,13 +268,13 @@ function renderPatientDetail(patient, sessions, auth) {
   $("#device-sync").textContent = formatDateTime(device?.last_seen_at);
   $("#pending-records").textContent = device?.pending_record_count ?? 0;
   const body = $("#patient-sessions");
-  body.innerHTML = sessions.length ? sessions.map((session) => `<tr><td>${escapeHtml(formatDateTime(session.started_at_utc))}</td><td>${escapeHtml(session.sync_source.replaceAll("_", " "))}</td><td>${Math.round(session.duration_seconds / 60)} min</td><td>${escapeHtml(session.requested_hz)} Hz</td><td>${session.estimated_hz ?? "—"} Hz</td><td><span class="pill ${statusClass(session.status)}">${escapeHtml(session.status)}</span></td></tr>`).join("") : `<tr><td colspan="6"><div class="empty-state"><span class="material-symbols-outlined">monitor_heart</span><h3>No sessions recorded</h3><p>Synced device sessions will appear here.</p></div></td></tr>`;
+  body.innerHTML = sessions.length ? sessions.map((session) => `<tr><td>${escapeHtml(formatDateTime(session.started_at_utc))}</td><td>${escapeHtml(session.sync_source.replaceAll("_", " "))}</td><td>${Math.round(session.duration_seconds / 60)} min</td><td>${escapeHtml(session.requested_hz)} Hz</td><td>${session.estimated_hz ?? "—"} Hz</td><td><span class="pill ${statusClass(session.status)}">${escapeHtml(session.status)}</span></td></tr>`).join("") : `<tr><td colspan="6"><div class="empty-state"><span class="material-symbols-outlined">monitor_heart</span><h3>No device usage recorded</h3><p>Synchronized vibration runs will appear here.</p></div></td></tr>`;
   $("#exit-patient")?.addEventListener("click", () => openPatientExit(auth, patient));
   $("#edit-patient")?.addEventListener("click", () => openPatientEdit(auth, patient));
   $("#replace-device")?.addEventListener("click", () => openDeviceAssignment(auth, patient.id, true));
   $("#assign-device")?.addEventListener("click", () => openDeviceAssignment(auth, patient.id));
   $$(".tab").forEach((tab) => tab.addEventListener("click", () => {
-    const destinations = { "Care plan": "care-plans.html", Schedule: "schedules.html", Sessions: "sessions.html", Device: "devices.html", "Audit history": "audit.html" };
+    const destinations = { "Care plan": "care-plans.html", Appointments: "schedules.html", "Device usage": "sessions.html", Device: "devices.html", "Audit history": "audit.html" };
     if (destinations[tab.textContent.trim()]) location.href = destinations[tab.textContent.trim()];
   }));
 }

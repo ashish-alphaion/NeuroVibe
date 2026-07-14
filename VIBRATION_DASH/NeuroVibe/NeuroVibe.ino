@@ -17,7 +17,6 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
-#include <BLE2902.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
@@ -248,7 +247,7 @@ void setup() {
   Serial.println("NeuroSense firmware started");
   Serial.printf("Device ID: %s\n", config.deviceId.c_str());
   Serial.printf("BLE name: %s\n", config.displayName.c_str());
-  Serial.printf("Pending sessions: %u\n", countQueuedSessions());
+  Serial.printf("Pending sessions: %lu\n", static_cast<unsigned long>(countQueuedSessions()));
   Serial.println("========================================");
 }
 
@@ -495,7 +494,6 @@ void initializeBle() {
     RESPONSE_CHARACTERISTIC_UUID,
     BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY
   );
-  responseCharacteristic->addDescriptor(new BLE2902());
   responseCharacteristic->setValue("{\"type\":\"ready\"}");
 
   service->start();
