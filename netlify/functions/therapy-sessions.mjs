@@ -27,7 +27,7 @@ export default async (request) => {
 async function uploadSession(request) {
   const body = await readSmallJson(request);
   requireSessionFields(body);
-  if (!(await verifyDeviceRequest(request, String(body.device_id)))) {
+  if (!(await verifyDeviceRequest(request, String(body.device_id), ["active", "sync_only"]))) {
     throw new ApiError(401, "unauthorized", "A valid device bearer token is required.");
   }
 

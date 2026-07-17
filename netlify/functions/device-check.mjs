@@ -19,8 +19,23 @@ export default async (request) => {
     if (!assignment || !["enrolled", "active"].includes(assignment.patients?.program_status)) {
       throw new ApiError(409, "assignment_not_active", "The doctor assignment is not active for this device and patient.");
     }
-    await supabase.from("devices").update({ lifecycle_status: "active", last_seen_at: new Date().toISOString() }).eq("id", deviceId);
-    return json(request, 200, { verified: true, device_id: deviceId, patient_id: patientId, assignment_id: assignmentId });
+    const now = new Date();
+    const leaseExpiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { error: leaseError } = await supabase.from("device_assignments").update({
+      lease_expires_at: leaseExpiresAt,
+      last_renewed_at: now.toISOString(),
+    }).eq("id", assignmentId).eq("status", "active");
+    if (leaseError) throw leaseError;
+    await supabase.from("devices").update({ lifecycle_status: "active", last_seen_at: now.toISOString() }).eq("id", deviceId);
+    return json(request, 200, {
+      verified: true,
+      device_id: deviceId,
+      patient_id: patientId,
+      assignment_id: assignmentId,
+      assignment_valid_until: leaseExpiresAt,
+      assignment_valid_until_epoch: Math.floor(new Date(leaseExpiresAt).getTime() / 1000),
+      server_time_epoch: Math.floor(now.getTime() / 1000),
+    });
   } catch (error) {
     console.error("device-check error", error);
     if (error instanceof ApiError) return json(request, error.status, { error: error.code, message: error.message });

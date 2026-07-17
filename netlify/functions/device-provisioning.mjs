@@ -11,8 +11,10 @@ export default async (request) => {
     if (!token) throw new ApiError(401, "unauthorized", "A patient app session is required.");
     const body = await readSmallJson(request);
     const deviceId = String(body.device_id || "").trim();
+    const hardwareId = String(body.hardware_id || "").trim();
     const patientCode = String(body.patient_code || "").trim();
     if (!/^[A-Za-z0-9._:-]{3,128}$/.test(deviceId)) throw new ApiError(400, "invalid_device_id", "A valid device ID is required.");
+    if (hardwareId && !/^[A-Za-z0-9._:-]{3,128}$/.test(hardwareId)) throw new ApiError(400, "invalid_hardware_id", "A valid hardware ID is required.");
 
     const supabase = getSupabaseAdmin();
     const { data: userResult, error: userError } = await supabase.auth.getUser(token);
@@ -37,10 +39,19 @@ export default async (request) => {
     }
 
     const { data: assignment, error: assignmentError } = await supabase.from("device_assignments")
-      .select("id, device_id, devices(id, display_name, lifecycle_status)")
+      .select("id, device_id, lease_expires_at, devices(id, hardware_id, display_name, lifecycle_status)")
       .eq("patient_id", patient.id).eq("device_id", deviceId).eq("status", "active").maybeSingle();
     if (assignmentError) throw assignmentError;
     if (!assignment) throw new ApiError(403, "device_not_assigned", "This NeuroSense device is not assigned to the signed-in patient.");
+    if (hardwareId && assignment.devices?.hardware_id && assignment.devices.hardware_id !== hardwareId) {
+      throw new ApiError(409, "hardware_identity_mismatch", "This physical NeuroSense does not match the doctor-registered device.");
+    }
+
+    if (hardwareId && !assignment.devices?.hardware_id) {
+      const { error: hardwareError } = await supabase.from("devices")
+        .update({ hardware_id: hardwareId }).eq("id", deviceId).is("hardware_id", null);
+      if (hardwareError) throw hardwareError;
+    }
 
     const { data: plan, error: planError } = await supabase.from("care_plans")
       .select("id, name, min_hz, target_hz, max_hz, duration_seconds, max_duration_seconds, manual_control_allowed")
@@ -52,16 +63,27 @@ export default async (request) => {
     const deviceToken = `nvd_${randomBytes(32).toString("base64url")}`;
     const tokenHash = createHmac("sha256", pepper).update(deviceToken, "utf8").digest("hex");
 
-    const now = new Date().toISOString();
+    const nowDate = new Date();
+    const now = nowDate.toISOString();
+    const leaseExpiresAt = new Date(nowDate.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const credentialExpiresAt = new Date(nowDate.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString();
+    const { error: leaseError } = await supabase.from("device_assignments").update({
+      lease_expires_at: leaseExpiresAt,
+      last_renewed_at: now,
+    }).eq("id", assignment.id).eq("status", "active");
+    if (leaseError) throw leaseError;
+
     const { error: revokeError } = await supabase.from("device_credentials")
       .update({ status: "revoked", revoked_at: now })
       .eq("device_id", deviceId).eq("status", "active");
     if (revokeError) throw revokeError;
     const { error: credentialError } = await supabase.from("device_credentials").insert({
       device_id: deviceId,
+      assignment_id: assignment.id,
       token_hash: tokenHash,
       status: "active",
       created_by: patient.doctor_id,
+      expires_at: credentialExpiresAt,
     });
     if (credentialError) throw credentialError;
 
@@ -81,6 +103,9 @@ export default async (request) => {
       device_id: deviceId,
       patient_id: patient.id,
       assignment_id: assignment.id,
+      assignment_valid_until: leaseExpiresAt,
+      assignment_valid_until_epoch: Math.floor(new Date(leaseExpiresAt).getTime() / 1000),
+      server_time_epoch: Math.floor(nowDate.getTime() / 1000),
       api_base_url: process.env.PUBLIC_API_BASE_URL?.trim() || "https://neurovibeapi.netlify.app",
       api_token: deviceToken,
       care_plan: plan,

@@ -70,16 +70,17 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
     private String connectedName = "Not connected";
     private boolean connected;
     private boolean deviceVerified;
-    private String physicalDeviceId;
-    private String hardwareDeviceId;
+    private String physicalDeviceId = "";
+    private String hardwareDeviceId = "Unknown hardware";
     private boolean factoryDeviceEmpty;
     private SupabaseAuthClient.PatientSession patientSession;
     private SupabaseAuthClient.DeviceProvisioning pendingProvisioning;
     private boolean setupInProgress;
     private boolean setupComplete;
-    private boolean wifiPromptShown;
     private String savedWifiSsid = "";
     private boolean wifiOnline;
+    private boolean wifiAttemptPending;
+    private String lastWifiDiagnostic = "";
     private boolean serverVerified;
     private int pendingRecords;
     private String syncMessage = "Waiting for device";
@@ -90,6 +91,7 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
     private int selectedDurationMinutes = 15;
     private String patientName = "Patient";
     private String patientCode = "Not linked";
+    private long lastForegroundRefreshMillis;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -100,6 +102,7 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
         ble = new NeuroSenseBleManager(this, this);
         authClient = new SupabaseAuthClient();
         preferences = getSharedPreferences("neurovibe_private", MODE_PRIVATE);
+        savedWifiSsid = preferences.getString("last_wifi_ssid", "");
         createNotificationChannel();
         if (!handleAuthIntent(getIntent())) restoreOrWelcome();
     }
@@ -217,7 +220,8 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
     private void routeAfterLogin() {
         retryLocalRecords();
         if (patientSession == null || patientSession.assignmentId == null || patientSession.assignedDeviceId == null) showAssignmentRequired();
-        else if (!patientSession.assignedDeviceId.equals(preferences.getString("enrolled_device_id", ""))) showDeviceIdSetup();
+        else if (!patientSession.assignedDeviceId.equals(preferences.getString("enrolled_device_id", "")) ||
+                !patientSession.assignmentId.equals(preferences.getString("enrolled_assignment_id", ""))) showConnect();
         else showHome();
     }
 
@@ -258,6 +262,36 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
         super.onNewIntent(intent);
         setIntent(intent);
         handleAuthIntent(intent);
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if (patientSession == null) return;
+        long now = System.currentTimeMillis();
+        if (now - lastForegroundRefreshMillis < 30_000) return;
+        lastForegroundRefreshMillis = now;
+        String refreshToken = preferences.getString("refresh_token", "");
+        if (refreshToken.isEmpty()) return;
+        String previousDeviceId = patientSession.assignedDeviceId;
+        String previousAssignmentId = patientSession.assignmentId;
+        authClient.restoreSession(refreshToken, new SupabaseAuthClient.Callback() {
+            public void onSuccess(SupabaseAuthClient.PatientSession session) { runOnUiThread(() -> {
+                boolean assignmentChanged =
+                        !java.util.Objects.equals(previousDeviceId, session.assignedDeviceId) ||
+                        !java.util.Objects.equals(previousAssignmentId, session.assignmentId);
+                applyPatientSession(session);
+                if (assignmentChanged) {
+                    ble.disconnect();
+                    connected = false;
+                    deviceVerified = false;
+                    serverVerified = false;
+                    setupComplete = false;
+                    toast("Your doctor assigned a different NeuroSense. Connect the replacement device.");
+                    routeAfterLogin();
+                }
+            }); }
+            public void onError(String message) { /* Keep the current offline session and retry later. */ }
+        });
     }
 
     private void showHome() {
@@ -337,7 +371,7 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
         LinearLayout profile = card(Color.WHITE); profile.addView(title(patientName, 22)); profile.addView(body("Patient ID · " + patientCode, 13)); page.addView(profile);
         page.addView(menuButton("NeuroSense device", patientSession == null || patientSession.assignedDeviceId == null ? "No database assignment" : (isDeviceReady() ? connectedName + " verified" : patientSession.assignedDeviceName + " · setup required"), this::showConnect), margin(-1,-2,0,16,0,0));
         page.addView(menuButton("Care plan", patientSession == null || patientSession.carePlanName == null ? "No active care plan" : patientSession.carePlanName + " · " + formatHz(patientSession.minHz) + "–" + formatHz(patientSession.maxHz) + " Hz", () -> carePlanDialog()), margin(-1,-2,0,12,0,0));
-        page.addView(menuButton("Wi-Fi setup", "Send Wi-Fi details securely over Bluetooth", this::wifiDialog), margin(-1,-2,0,12,0,0));
+        page.addView(menuButton("Optional direct Wi-Fi", wifiOnline ? "Connected to " + savedWifiSsid : "The app can synchronize without device Wi-Fi", this::wifiDialog), margin(-1,-2,0,12,0,0));
         page.addView(menuButton("Help and safety", "Emergency guidance and support", this::helpDialog), margin(-1,-2,0,12,0,0));
         Button signOut = outline("Sign out"); signOut.setOnClickListener(v -> showSignOut()); page.addView(signOut, margin(-1,52,0,22,0,0));
         setScrollable(page); addBottomNav("more");
@@ -348,26 +382,62 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
         boolean hasAssignment = patientSession != null && patientSession.assignedDeviceId != null;
         if (!hasAssignment && !identificationMode) { showAssignmentRequired(); return; }
         LinearLayout page = page(false);
-        if (deviceVerified) { Button back = textButton("‹ Back to dashboard"); back.setOnClickListener(v -> showHome()); page.addView(back, wrap()); }
-        TextView step = label(deviceVerified ? "DEVICE CONNECTION" : "FIRST-TIME SETUP  ·  2 OF 3", 11); step.setTextColor(BLUE); page.addView(step);
-        page.addView(title(hasAssignment ? "Your NeuroSense" : "Identify NeuroSense", 28), margin(-1,-2,0,12,0,8));
-        page.addView(body(hasAssignment ? "Assigned by your clinic: " + (patientSession.assignedDeviceName == null ? "NeuroSense" : patientSession.assignedDeviceName) + "\nDevice ID: " + patientSession.assignedDeviceId : "Connect the nearby device only to read its hardware ID. Vibration output remains locked until a doctor registers and assigns it.", 15), margin(-1,-2,0,0,0,20));
-        TextView status = label(isDeviceReady() ? "● VERIFIED · " + connectedName : connected ? "● CONNECTED · ENROLLMENT IN PROGRESS" : "BLUETOOTH DEVICE SCAN", 12); status.setTextColor(isDeviceReady() ? GREEN : BLUE); page.addView(status);
-        Button scan = primary(connected ? "Scan for another device" : "Find NeuroSense"); scan.setOnClickListener(v -> requestBleAndScan()); page.addView(scan, margin(-1,52,0,14,0,18));
+        if (setupComplete) {
+            Button back = textButton("‹ Back to dashboard");
+            back.setOnClickListener(v -> showHome());
+            page.addView(back, wrap());
+        }
+        TextView step = label("DEVICE SETUP  ·  PHASE 1 OF 2", 11); step.setTextColor(BLUE); page.addView(step);
+        page.addView(title(hasAssignment ? "Connect your NeuroSense" : "Identify NeuroSense", 30), margin(-1,-2,0,12,0,8));
+        page.addView(body("Keep the device powered and close to this phone. NeuroVibe creates a private Bluetooth link and installs the assignment issued by your doctor.", 15), margin(-1,-2,0,0,0,20));
+
+        LinearLayout assignment = card(SKY);
+        assignment.addView(label(hasAssignment ? "ASSIGNED BY YOUR DOCTOR" : "IDENTIFICATION MODE", 10));
+        assignment.addView(title(hasAssignment ? patientSession.assignedDeviceId : "Unassigned device", 22), margin(-1,-2,0,7,0,3));
+        assignment.addView(body(hasAssignment ? patientName + " · " + patientCode : "Motor control remains locked.", 13));
+        page.addView(assignment, margin(-1,-2,0,0,0,16));
+
+        page.addView(setupPhaseCard("1", "Bluetooth connection",
+                connected ? "Connected to " + connectedName : "Find and connect the nearby NeuroSense",
+                connected, true));
+        page.addView(setupPhaseCard("2", "Secure device assignment",
+                serverVerified ? "Assignment active for " + patientName : "Available after Bluetooth verification",
+                serverVerified, connected && deviceVerified));
+
+        Button scan = primary(connected ? "Find a different NeuroSense" : "Scan for NeuroSense");
+        scan.setOnClickListener(v -> requestBleAndScan());
+        page.addView(scan, margin(-1,54,0,18,0,12));
         deviceList = column(Gravity.CENTER_HORIZONTAL, 10); page.addView(deviceList);
         if (connected) {
-            LinearLayout connectedCard = card(Color.WHITE); connectedCard.addView(title(connectedName, 20));
-            String assignedId = patientSession == null ? "not assigned" : patientSession.assignedDeviceId;
-            String identityText = factoryDeviceEmpty ? "Factory-empty device · " + hardwareDeviceId + "\nReady to receive assigned Device ID " + assignedId : serverVerified ? "Device ID " + physicalDeviceId + " verified for " + patientName : "Device ID " + physicalDeviceId + " · waiting for online assignment verification";
-            connectedCard.addView(body(identityText, 13));
-            Button info = outline("Refresh device status"); info.setOnClickListener(v -> ble.sendType("get_status")); connectedCard.addView(info, margin(-1,48,0,14,0,8));
-            if (deviceVerified) {
-                Button wifi = outline("Wi-Fi settings"); wifi.setOnClickListener(v -> showWifiSetup()); connectedCard.addView(wifi, margin(-1,48,0,0,0,8));
-                Button sync = outline("Sync usage now"); sync.setOnClickListener(v -> { ble.sendType("sync_now"); ble.sendType("get_pending"); toast("Synchronization requested."); }); connectedCard.addView(sync, margin(-1,48,0,0,0,8));
+            LinearLayout connectedCard = card(Color.WHITE);
+            connectedCard.addView(title("Bluetooth link ready", 20));
+            connectedCard.addView(body(deviceVerified
+                    ? "Hardware " + hardwareDeviceId + " has responded. Secure assignment can now be installed."
+                    : "Reading the device identity and connection state…", 13), margin(-1,-2,0,6,0,0));
+            if (!deviceVerified) {
+                ProgressBar progress = new ProgressBar(this);
+                progress.setIndeterminate(true);
+                connectedCard.addView(progress, margin(42,42,0,14,0,8));
+                Button retryStatus = outline("Retry device handshake");
+                retryStatus.setOnClickListener(v -> ble.sendType("get_status"));
+                connectedCard.addView(retryStatus, margin(-1,48,0,4,0,8));
+            } else if (!serverVerified) {
+                Button provision = accent("Install doctor assignment");
+                provision.setOnClickListener(v -> beginSecureProvisioning());
+                connectedCard.addView(provision, margin(-1,52,0,16,0,8));
+            } else {
+                Button continueButton = accent("Continue to dashboard");
+                continueButton.setOnClickListener(v -> showHome());
+                connectedCard.addView(continueButton, margin(-1,52,0,16,0,8));
+                Button wifi = outline(wifiOnline ? "Direct Wi-Fi settings" : "Add optional direct Wi-Fi");
+                wifi.setOnClickListener(v -> showWifiSetup());
+                connectedCard.addView(wifi, margin(-1,48,0,0,0,8));
             }
-            Button disconnect = danger("Disconnect"); disconnect.setOnClickListener(v -> { ble.disconnect(); connected = false; deviceVerified = false; showConnect(); }); connectedCard.addView(disconnect, margin(-1,48,0,0,0,0));
+            Button disconnect = outline("Disconnect Bluetooth");
+            disconnect.setOnClickListener(v -> { ble.disconnect(); connected = false; deviceVerified = false; showConnect(); });
+            connectedCard.addView(disconnect, margin(-1,48,0,0,0,0));
             deviceList.addView(connectedCard);
-        } else deviceList.addView(body("No scan started yet.", 14));
+        } else deviceList.addView(body("No scan is running. Tap “Scan for NeuroSense” to begin.", 14));
         setScrollable(page);
     }
 
@@ -400,7 +470,7 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
     }
 
     private void startSession() {
-        if (!isDeviceReady() || patientSession == null) { toast("Complete Wi-Fi and server assignment verification first."); showConnect(); return; }
+        if (!isDeviceReady() || patientSession == null) { toast("Connect NeuroSense and install the active doctor assignment first."); showConnect(); return; }
         try { ble.send(new JSONObject().put("type", "start_session").put("target_hz", selectedHz).put("duration_seconds", selectedDurationMinutes * 60)); }
         catch (Exception error) { toast(error.getMessage()); }
         showActiveSession();
@@ -429,13 +499,18 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
         setScrollable(page);
         sessionTimer = new CountDownTimer(sessionDuration * 1000L, 1000) {
             public void onTick(long millis) { remainingSeconds = (int)(millis / 1000); timer.setText(String.format(Locale.US, "%02d:%02d", remainingSeconds / 60, remainingSeconds % 60)); progress.setProgress(sessionDuration - remainingSeconds); }
-            public void onFinish() { ble.sendType("stop_session"); showCompletion(false); }
+            public void onFinish() {
+                ble.sendType("stop_session");
+                handler.postDelayed(() -> { if (ble.isConnected()) ble.sendType("get_pending"); }, 700);
+                showCompletion(false);
+            }
         }.start();
     }
 
     private void confirmStop(boolean emergency) {
         if (sessionTimer != null) sessionTimer.cancel();
         ble.sendType(emergency ? "emergency_stop" : "stop_session");
+        handler.postDelayed(() -> { if (ble.isConnected()) ble.sendType("get_pending"); }, 700);
         showCompletion(true);
     }
 
@@ -451,14 +526,17 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
         String key = device.getAddress(); if (scanResults.containsKey(key)) return; scanResults.put(key, device);
         if (deviceList == null) return; if (scanResults.size() == 1) deviceList.removeAllViews();
         String name = device.getName() == null ? "NeuroSense" : device.getName();
-        Button item = outline(name + "\nSignal " + rssi + " dBm"); item.setGravity(Gravity.START | Gravity.CENTER_VERTICAL); item.setOnClickListener(v -> { toast("Connecting to " + name + "…"); ble.connect(device); }); deviceList.addView(item, margin(-1,62,0,0,0,10));
+        Button item = outline("◉  " + name + "\n     Signal " + rssi + " dBm  ·  Tap to connect");
+        item.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+        item.setOnClickListener(v -> { toast("Connecting to " + name + "…"); ble.connect(device); });
+        deviceList.addView(item, margin(-1,68,0,0,0,10));
     }
 
     @Override public void onConnectionChanged(boolean isConnected, String name) {
         connected = isConnected;
         connectedName = isConnected ? name : "Not connected";
-        if (!isConnected) { deviceVerified = false; setupInProgress = false; setupComplete = false; }
-        toast(isConnected ? name + " connected. Verifying assignment…" : name);
+        if (!isConnected) { deviceVerified = false; setupInProgress = false; wifiAttemptPending = false; }
+        toast(isConnected ? "Phase 1 complete: Bluetooth connected." : name);
         if (isConnected) { showConnect(); ble.sendType("get_status"); }
     }
 
@@ -466,7 +544,15 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
         try {
             JSONObject message = new JSONObject(json);
             String type = message.optString("type");
-            if ("error".equals(type)) { setupInProgress = false; toast(message.optString("message", "Device rejected the command.")); return; }
+            if ("error".equals(type)) {
+                setupInProgress = false;
+                if (wifiAttemptPending || "set_wifi".equals(message.optString("command"))) {
+                    wifiAttemptPending = false;
+                    lastWifiDiagnostic = message.optString("code", "device_rejected_wifi");
+                    showWifiResult(false, message);
+                } else toast(message.optString("message", "Device rejected the command."));
+                return;
+            }
             if ("status".equals(type)) { handleDeviceStatus(message); return; }
             if ("ok".equals(type)) { handleDeviceCommandAccepted(message.optString("command")); return; }
             if ("wifi_result".equals(type)) {
@@ -474,15 +560,11 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
                 boolean verified = message.optBoolean("server_verified", false);
                 wifiOnline = online;
                 serverVerified = verified;
-                setupComplete = online && verified;
+                lastWifiDiagnostic = nullableString(message, "diagnostic", "");
+                wifiAttemptPending = false;
                 setupInProgress = false;
-                if (online && verified) {
-                    preferences.edit().putString("enrolled_device_id", patientSession.assignedDeviceId).apply();
-                    syncMessage = "Connected. Checking for records to upload.";
-                    ble.sendType("sync_now"); ble.sendType("get_pending");
-                    toast("NeuroSense setup is complete and Wi-Fi is connected."); showHome();
-                } else if (!online) { syncMessage = "Wi-Fi connection failed"; toast("Wi-Fi connection failed. Check the network name and password."); wifiPromptShown = false; showWifiSetup(); }
-                else { syncMessage = "Wi-Fi connected, but server assignment verification failed"; toast("Wi-Fi connected, but NS01 is not verified for this patient on the server."); showWifiSetup(); }
+                syncMessage = online ? "Wi-Fi connected" : "Wi-Fi unable to connect";
+                showWifiResult(online, message);
                 return;
             }
             if ("sync_result".equals(type)) { pendingRecords = message.optInt("pending_sessions", pendingRecords); syncMessage = message.optBoolean("uploaded", false) ? "Latest usage uploaded successfully" : "No upload completed; records remain safely queued"; showHome(); return; }
@@ -490,15 +572,26 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
         }
         catch (Exception ignored) { }
     }
-    @Override public void onError(String message) { toast(message); }
+    @Override public void onError(String message) {
+        if (wifiAttemptPending) {
+            wifiAttemptPending = false;
+            lastWifiDiagnostic = message;
+            try { showWifiResult(false, new JSONObject().put("diagnostic", message)); }
+            catch (Exception ignored) { toast(message); }
+        } else toast(message);
+    }
 
     private void handleDeviceStatus(JSONObject status) {
-        physicalDeviceId = status.optString("device_id", "");
-        hardwareDeviceId = status.optString("hardware_id", "Unknown hardware");
+        physicalDeviceId = nullableString(status, "device_id", "");
+        hardwareDeviceId = nullableString(status, "hardware_id", "Unknown hardware");
         factoryDeviceEmpty = physicalDeviceId.isEmpty();
-        savedWifiSsid = status.optString("wifi_ssid", "");
+        savedWifiSsid = nullableString(status, "wifi_ssid", "");
         wifiOnline = status.optBoolean("wifi_connected", false);
-        serverVerified = status.optBoolean("server_verified", false);
+        serverVerified = status.optBoolean("server_verified", false) &&
+                status.optBoolean("assignment_lease_active", false);
+        long leaseValidUntil = status.optLong("assignment_valid_until_epoch", 0);
+        boolean leaseNeedsRefresh = serverVerified && leaseValidUntil > 0 &&
+                leaseValidUntil - System.currentTimeMillis() / 1000L < 2 * 24 * 60 * 60L;
         pendingRecords = status.optInt("pending_sessions", 0);
         if (patientSession == null || patientSession.assignedDeviceId == null) {
             identificationMode = true;
@@ -509,32 +602,88 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
         }
         if (!factoryDeviceEmpty && !patientSession.assignedDeviceId.equalsIgnoreCase(physicalDeviceId)) {
             deviceVerified = false;
-            showWrongDevice();
+            if (wasPreviouslyAssignedToPatient(physicalDeviceId)) showPreviousDeviceSync();
+            else showWrongDevice();
             return;
         }
         deviceVerified = true;
-        if (!factoryDeviceEmpty && serverVerified) {
+        if (!factoryDeviceEmpty && serverVerified && !leaseNeedsRefresh) {
             setupComplete = true;
-            preferences.edit().putString("enrolled_device_id", patientSession.assignedDeviceId).apply();
-            syncMessage = wifiOnline ? "Device and assignment verified online" : "Assignment previously verified; usage will queue offline";
+            preferences.edit()
+                    .putString("enrolled_device_id", patientSession.assignedDeviceId)
+                    .putString("enrolled_assignment_id", patientSession.assignmentId)
+                    .apply();
+            syncMessage = wifiOnline ? "Device and assignment verified online" : "Bluetooth relay ready; direct device Wi-Fi is optional";
             ble.sendType("get_pending"); showHome(); return;
+        }
+        if (!factoryDeviceEmpty && serverVerified && leaseNeedsRefresh) {
+            setupInProgress = true;
+            syncMessage = "Renewing the device assignment lease through this app";
+            requestSecureProvisioning();
+            return;
         }
         if (setupComplete || setupInProgress) return;
         setupInProgress = true;
         boolean apiConfigured = status.optBoolean("api_configured", false);
-        boolean enrolledLocally = patientSession.assignedDeviceId.equals(preferences.getString("enrolled_device_id", ""));
+        boolean enrolledLocally = patientSession.assignedDeviceId.equals(preferences.getString("enrolled_device_id", "")) &&
+                patientSession.assignmentId.equals(preferences.getString("enrolled_assignment_id", ""));
         if (factoryDeviceEmpty || !apiConfigured || !enrolledLocally || !serverVerified) requestSecureProvisioning();
         else sendAssignmentConfiguration();
     }
 
+    private String nullableString(JSONObject object, String key, String fallback) {
+        if (object == null || object.isNull(key)) return fallback;
+        String value = object.optString(key, fallback);
+        return "null".equalsIgnoreCase(value.trim()) ? fallback : value.trim();
+    }
+
+    private boolean wasPreviouslyAssignedToPatient(String deviceId) {
+        if (patientSession == null || deviceId == null || deviceId.isEmpty()) return false;
+        JSONArray history = patientSession.assignmentHistory;
+        for (int index = 0; index < history.length(); index++) {
+            JSONObject assignment = history.optJSONObject(index);
+            if (assignment != null && "closed".equals(assignment.optString("status")) &&
+                    deviceId.equalsIgnoreCase(assignment.optString("device_id"))) return true;
+        }
+        return false;
+    }
+
+    private void showPreviousDeviceSync() {
+        LinearLayout page = page(false);
+        TextView badge = label("PREVIOUSLY ASSIGNED DEVICE", 10); badge.setTextColor(BLUE); page.addView(badge);
+        page.addView(title("Recover stored usage only", 28), margin(-1,-2,0,12,0,8));
+        page.addView(body("This is " + physicalDeviceId + ", a previous NeuroSense for " + patientName +
+                ". Motor control is locked, but usage recorded before replacement can still be transferred safely.", 15),
+                margin(-1,-2,0,0,0,20));
+        LinearLayout status = card(SKY);
+        status.addView(title(pendingRecords + " stored record" + (pendingRecords == 1 ? "" : "s"), 21));
+        status.addView(body("Records remain linked to their original device and assignment.", 13));
+        page.addView(status);
+        Button transfer = primary("Transfer stored records");
+        transfer.setEnabled(pendingRecords > 0);
+        transfer.setOnClickListener(v -> {
+            ble.sendType("get_pending");
+            toast("Stored records are transferring. Motor control remains disabled.");
+        });
+        page.addView(transfer, margin(-1,54,0,18,0,10));
+        Button disconnect = outline("Disconnect previous device");
+        disconnect.setOnClickListener(v -> { ble.disconnect(); showConnect(); });
+        page.addView(disconnect, margin(-1,52,0,0,0,0));
+        setScrollable(page);
+    }
+
     private void requestSecureProvisioning() {
-        authClient.provisionDevice(patientSession, patientSession.assignedDeviceId, new SupabaseAuthClient.ProvisioningCallback() {
+        authClient.provisionDevice(patientSession, patientSession.assignedDeviceId, hardwareDeviceId, new SupabaseAuthClient.ProvisioningCallback() {
             public void onSuccess(SupabaseAuthClient.DeviceProvisioning provisioning) { runOnUiThread(() -> {
                 pendingProvisioning = provisioning;
                 try { if (factoryDeviceEmpty) ble.send(new JSONObject().put("type", "set_identity").put("device_id", patientSession.assignedDeviceId)); else sendServerConfiguration(); }
                 catch (Exception error) { setupInProgress = false; toast(error.getMessage()); }
             }); }
-            public void onError(String message) { runOnUiThread(() -> { setupInProgress = false; toast(message); showConnect(); }); }
+            public void onError(String message) { runOnUiThread(() -> {
+                setupInProgress = false;
+                toast(message);
+                if (serverVerified) showHome(); else showConnect();
+            }); }
         });
     }
 
@@ -542,7 +691,8 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
         if ("set_identity".equals(command)) { physicalDeviceId = patientSession.assignedDeviceId; factoryDeviceEmpty = false; sendServerConfiguration(); return; }
         if ("set_server".equals(command)) { sendAssignmentConfiguration(); return; }
         if ("set_assignment".equals(command)) { sendCarePlanConfiguration(); return; }
-        if ("set_limits".equals(command)) { finishConfigurationWithWifi(); return; }
+        if ("set_limits".equals(command)) { ble.sendType("activate_assignment"); return; }
+        if ("activate_assignment".equals(command)) { finishSecureConfiguration(); return; }
         if ("set_wifi".equals(command)) { toast("Wi-Fi saved. NeuroSense is connecting…"); return; }
     }
 
@@ -553,7 +703,20 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
     }
 
     private void sendAssignmentConfiguration() {
-        try { ble.send(new JSONObject().put("type", "set_assignment").put("patient_id", patientSession.patientId).put("assignment_id", patientSession.assignmentId)); }
+        try {
+            long validUntil = pendingProvisioning != null
+                    ? pendingProvisioning.assignmentValidUntilEpoch
+                    : patientSession.assignmentValidUntilEpoch;
+            long serverTime = pendingProvisioning != null
+                    ? pendingProvisioning.serverTimeEpoch
+                    : System.currentTimeMillis() / 1000L;
+            ble.send(new JSONObject()
+                    .put("type", "set_assignment")
+                    .put("patient_id", patientSession.patientId)
+                    .put("assignment_id", patientSession.assignmentId)
+                    .put("assignment_valid_until_epoch", validUntil)
+                    .put("server_time_epoch", serverTime));
+        }
         catch (Exception error) { setupInProgress = false; toast(error.getMessage()); }
     }
 
@@ -565,10 +728,54 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
         } catch (Exception error) { setupInProgress = false; toast(error.getMessage()); }
     }
 
-    private void finishConfigurationWithWifi() {
+    private void finishSecureConfiguration() {
         setupInProgress = false;
-        if (!wifiOnline) { wifiPromptShown = false; showWifiSetup(); }
-        else { setupInProgress = true; syncMessage = "Wi-Fi connected; verifying doctor assignment with server"; ble.sendType("verify_enrollment"); }
+        setupComplete = true;
+        serverVerified = true;
+        preferences.edit()
+                .putString("enrolled_device_id", patientSession.assignedDeviceId)
+                .putString("enrolled_assignment_id", patientSession.assignmentId)
+                .apply();
+        syncMessage = wifiOnline ? "Assignment active and direct Wi-Fi connected" : "Assignment active; usage will synchronize through this app";
+        ble.sendType("get_pending");
+        showAssignmentReady();
+    }
+
+    private void beginSecureProvisioning() {
+        if (!connected || !deviceVerified) { showConnect(); return; }
+        setupInProgress = true;
+        LinearLayout page = page(false);
+        page.setGravity(Gravity.CENTER_HORIZONTAL);
+        ProgressBar progress = new ProgressBar(this);
+        progress.setIndeterminate(true);
+        page.addView(progress, margin(72,72,0,80,0,22));
+        TextView heading = title("Finishing secure setup", 27); heading.setGravity(Gravity.CENTER); page.addView(heading);
+        TextView copy = body("NeuroVibe is securely applying the doctor-assigned identity, renewable assignment and care limits. Device Wi-Fi is not required.", 15);
+        copy.setGravity(Gravity.CENTER); page.addView(copy, margin(-1,-2,12,10,12,22));
+        page.addView(setupPhaseCard("1", "Bluetooth connection", connectedName + " connected", true, true));
+        page.addView(setupPhaseCard("2", "Secure device assignment", "Downloading from the NeuroVibe server", false, true));
+        setScrollable(page);
+        requestSecureProvisioning();
+    }
+
+    private void showAssignmentReady() {
+        LinearLayout page = page(false);
+        page.setGravity(Gravity.CENTER_HORIZONTAL);
+        TextView symbol = title("✓", 48);
+        symbol.setTextColor(Color.WHITE);
+        symbol.setGravity(Gravity.CENTER);
+        symbol.setBackground(round(GREEN, 64));
+        page.addView(symbol, margin(96,96,0,58,0,20));
+        TextView heading = title("NeuroSense is ready", 29); heading.setGravity(Gravity.CENTER); page.addView(heading);
+        TextView copy = body("The doctor assignment is active. You can use the device through Bluetooth and NeuroVibe will relay records to the server.", 15);
+        copy.setGravity(Gravity.CENTER); page.addView(copy, margin(-1,-2,12,10,12,24));
+        Button dashboard = primary("Open dashboard");
+        dashboard.setOnClickListener(v -> showHome());
+        page.addView(dashboard, margin(-1,54,0,0,0,10));
+        Button wifi = outline("Add optional direct Wi-Fi");
+        wifi.setOnClickListener(v -> showWifiSetup());
+        page.addView(wifi, margin(-1,52,0,0,0,0));
+        setScrollable(page);
     }
 
     private void wifiDialog() {
@@ -578,22 +785,126 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
     private void showWifiSetup() {
         if (!connected || !deviceVerified) { showConnect(); return; }
         LinearLayout page = page(false);
-        TextView step = label("FIRST-TIME SETUP  ·  3 OF 3", 11); step.setTextColor(BLUE); page.addView(step);
-        page.addView(title("Connect NeuroSense to Wi-Fi", 28), margin(-1,-2,0,12,0,8));
-        page.addView(body("The network is saved securely on the ESP32 and reused automatically after every power-on.", 15), margin(-1,-2,0,0,0,20));
-        LinearLayout device = card(SKY); device.addView(label("VERIFIED DEVICE", 11)); device.addView(title(connectedName, 20)); device.addView(body(patientSession.assignedDeviceId, 13)); page.addView(device);
-        EditText ssid = input("Wi-Fi network name"); ssid.setText(savedWifiSsid); page.addView(ssid, margin(-1,54,0,18,0,12));
-        EditText password = input("Wi-Fi password"); password.setInputType(0x81); page.addView(password, margin(-1,54,0,0,0,12));
-        TextView state = body(wifiOnline ? "Currently connected to " + savedWifiSsid : "Not connected. Enter the 2.4 GHz Wi-Fi details.", 13); state.setTextColor(wifiOnline ? GREEN : MUTED); page.addView(state, margin(-1,-2,0,0,0,20));
-        Button connectButton = primary("Save and Connect"); connectButton.setOnClickListener(v -> {
+        TextView step = label("OPTIONAL DIRECT SYNCHRONIZATION", 11); step.setTextColor(BLUE); page.addView(step);
+        page.addView(title("Connect NeuroSense to Wi-Fi", 30), margin(-1,-2,0,12,0,8));
+        page.addView(body("NeuroSense already works through Bluetooth. Add Wi-Fi only if you also want the device to upload records directly without the app.", 15), margin(-1,-2,0,0,0,20));
+        page.addView(setupPhaseCard("1", "Bluetooth connection", connectedName + " connected", true, true));
+        page.addView(setupPhaseCard("2", "Doctor assignment", "Active and ready", serverVerified, true));
+
+        LinearLayout form = card(Color.WHITE);
+        TextView formLabel = label("NETWORK DETAILS", 10); formLabel.setTextColor(BLUE); form.addView(formLabel);
+        EditText ssid = input("Wi-Fi network name (SSID)");
+        ssid.setText(savedWifiSsid);
+        form.addView(ssid, margin(-1,56,0,12,0,12));
+        EditText password = input("Wi-Fi password");
+        password.setInputType(0x81);
+        form.addView(password, margin(-1,56,0,0,0,8));
+        form.addView(body("Use the exact uppercase/lowercase spelling. For an iPhone hotspot, enable “Maximize Compatibility”.", 12));
+        page.addView(form, margin(-1,-2,0,16,0,16));
+
+        Button connectButton = primary("Send details and connect");
+        connectButton.setOnClickListener(v -> {
             String network = ssid.getText().toString().trim();
             if (network.isEmpty()) { toast("Enter the Wi-Fi network name."); return; }
-            connectButton.setEnabled(false); connectButton.setText("Connecting…");
-            try { savedWifiSsid = network; ble.send(new JSONObject().put("type","set_wifi").put("ssid",network).put("password",password.getText().toString())); }
-            catch(Exception error) { connectButton.setEnabled(true); connectButton.setText("Save and Connect"); toast(error.getMessage()); }
-        }); page.addView(connectButton, margin(-1,54,0,0,0,12));
-        Button back = textButton("Back to device"); back.setOnClickListener(v -> showConnect()); page.addView(back);
+            String wifiPassword = password.getText().toString();
+            if (!wifiPassword.isEmpty() && wifiPassword.length() < 8) { toast("Wi-Fi passwords normally contain at least 8 characters."); return; }
+            connectButton.setEnabled(false);
+            savedWifiSsid = network;
+            preferences.edit().putString("last_wifi_ssid", network).apply();
+            wifiAttemptPending = true;
+            showWifiConnecting();
+            try {
+                ble.send(new JSONObject().put("type","set_wifi").put("ssid",network).put("password",wifiPassword));
+            } catch(Exception error) {
+                wifiAttemptPending = false;
+                toast(error.getMessage());
+                showWifiSetup();
+            }
+        });
+        page.addView(connectButton, margin(-1,54,0,0,0,12));
+        Button back = textButton("Skip · Continue without device Wi-Fi");
+        back.setOnClickListener(v -> { if (serverVerified) showHome(); else showConnect(); });
+        page.addView(back);
         setScrollable(page);
+    }
+
+    private void showWifiConnecting() {
+        LinearLayout page = page(false);
+        page.setGravity(Gravity.CENTER_HORIZONTAL);
+        ProgressBar progress = new ProgressBar(this);
+        progress.setIndeterminate(true);
+        page.addView(progress, margin(78,78,0,72,0,22));
+        TextView heading = title("Connecting to " + savedWifiSsid, 27); heading.setGravity(Gravity.CENTER); page.addView(heading);
+        TextView copy = body("NeuroSense is scanning and authenticating. Keep Bluetooth connected; this can take up to 30 seconds.", 15);
+        copy.setGravity(Gravity.CENTER); page.addView(copy, margin(-1,-2,10,10,10,24));
+        LinearLayout notice = card(SKY);
+        notice.addView(label("PHASE 2 IN PROGRESS", 10));
+        notice.addView(body("The ESP32-C3 will report either “Wi-Fi connected” or “Wi-Fi unable to connect”.", 14), margin(-1,-2,0,6,0,0));
+        page.addView(notice);
+        Button cancel = outline("Cancel and disconnect");
+        cancel.setOnClickListener(v -> { wifiAttemptPending = false; ble.disconnect(); showConnect(); });
+        page.addView(cancel, margin(-1,52,0,22,0,0));
+        setScrollable(page);
+    }
+
+    private void showWifiResult(boolean connectedToWifi, JSONObject result) {
+        LinearLayout page = page(false);
+        page.setGravity(Gravity.CENTER_HORIZONTAL);
+        TextView symbol = title(connectedToWifi ? "✓" : "!", 48);
+        symbol.setTextColor(Color.WHITE);
+        symbol.setGravity(Gravity.CENTER);
+        symbol.setBackground(round(connectedToWifi ? GREEN : RED, 64));
+        page.addView(symbol, margin(96,96,0,62,0,20));
+
+        TextView heading = title(connectedToWifi ? "Wi-Fi connected" : "Wi-Fi unable to connect", 28);
+        heading.setGravity(Gravity.CENTER); page.addView(heading);
+        String ssid = nullableString(result, "ssid", savedWifiSsid);
+        String detail = connectedToWifi
+                ? "NeuroSense joined " + ssid + ". The network has been saved and will be reused after restart."
+                : wifiFailureMessage(result);
+        TextView copy = body(detail, 15); copy.setGravity(Gravity.CENTER);
+        page.addView(copy, margin(-1,-2,12,10,12,24));
+
+        page.addView(setupPhaseCard("1", "Bluetooth connection", connectedName + " connected", true, true));
+        page.addView(setupPhaseCard("2", "Optional direct Wi-Fi",
+                connectedToWifi ? ssid + " connected" : "Connection failed — details can be corrected",
+                connectedToWifi, true));
+
+        if (connectedToWifi && serverVerified) {
+            setupComplete = true;
+            preferences.edit()
+                    .putString("enrolled_device_id", patientSession.assignedDeviceId)
+                    .putString("enrolled_assignment_id", patientSession.assignmentId)
+                    .apply();
+            ble.sendType("sync_now");
+            ble.sendType("get_pending");
+            Button done = primary("Open NeuroVibe dashboard");
+            done.setOnClickListener(v -> showHome());
+            page.addView(done, margin(-1,54,0,22,0,0));
+        } else if (connectedToWifi) {
+            Button next = primary("Return to device setup");
+            next.setOnClickListener(v -> showConnect());
+            page.addView(next, margin(-1,54,0,22,0,8));
+        } else {
+            Button retry = primary("Check details and retry");
+            retry.setOnClickListener(v -> showWifiSetup());
+            page.addView(retry, margin(-1,54,0,22,0,8));
+            Button bluetooth = textButton(serverVerified ? "Continue without device Wi-Fi" : "Back to Bluetooth");
+            bluetooth.setOnClickListener(v -> { if (serverVerified) showHome(); else showConnect(); });
+            page.addView(bluetooth);
+        }
+        setScrollable(page);
+    }
+
+    private String wifiFailureMessage(JSONObject result) {
+        String reason = nullableString(result, "disconnect_reason_name", lastWifiDiagnostic);
+        if (reason.contains("password") || reason.contains("authentication") || reason.contains("handshake"))
+            return "NeuroSense found " + savedWifiSsid + " but authentication failed. Check the password exactly and retry.";
+        if (reason.contains("not_found") || reason.contains("not_visible") || reason.contains("access_point"))
+            return "NeuroSense could not see " + savedWifiSsid + ". Confirm the name and enable a 2.4 GHz network or hotspot compatibility mode.";
+        if (reason.contains("weak") || reason.contains("beacon"))
+            return "The Wi-Fi signal was lost. Move NeuroSense closer to the router or phone and retry.";
+        return "NeuroSense could not join " + savedWifiSsid + ". Check the network name, password, and 2.4 GHz availability.";
     }
 
     private void relayUsageRecord(JSONObject record) {
@@ -739,6 +1050,28 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
     }
     private View historyCard(String when,String hz,String duration,String status){LinearLayout c=card(Color.WHITE);LinearLayout r=row();LinearLayout info=column(Gravity.START,3);info.addView(title(when,16));info.addView(body(hz+" · "+duration,13));r.addView(info,weight());TextView s=label(status,10);s.setTextColor(status.equals("Completed")?GREEN:RED);r.addView(s);c.addView(r);return c;}
     private View metric(String value,String name,String icon){LinearLayout c=card(Color.WHITE);TextView i=title(icon,20);i.setTextColor(BLUE);c.addView(i);c.addView(title(value,26));c.addView(body(name,12));return c;}
+    private View setupPhaseCard(String number, String heading, String message, boolean complete, boolean enabled) {
+        LinearLayout card = card(complete ? Color.rgb(232, 247, 240) : enabled ? Color.WHITE : Color.rgb(239, 244, 247));
+        LinearLayout line = row();
+        TextView badge = title(complete ? "✓" : number, 17);
+        badge.setGravity(Gravity.CENTER);
+        badge.setTextColor(Color.WHITE);
+        badge.setBackground(round(complete ? GREEN : enabled ? BLUE : Color.rgb(142, 154, 164), 30));
+        line.addView(badge, new LinearLayout.LayoutParams(dp(42), dp(42)));
+        LinearLayout copy = column(Gravity.START, 2);
+        copy.addView(title(heading, 17));
+        copy.addView(body(message, 12));
+        LinearLayout.LayoutParams copyParams = weight();
+        copyParams.leftMargin = dp(13);
+        line.addView(copy, copyParams);
+        TextView state = label(complete ? "DONE" : enabled ? "READY" : "NEXT", 9);
+        state.setTextColor(complete ? GREEN : enabled ? BLUE : MUTED);
+        line.addView(state);
+        card.addView(line);
+        LinearLayout.LayoutParams cardParams = margin(-1,-2,0,0,0,10);
+        card.setLayoutParams(cardParams);
+        return card;
+    }
     private Button menuButton(String name,String sub,Runnable action){Button b=outline(name+"\n"+sub+"   ›");b.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);b.setAllCaps(false);b.setOnClickListener(v->action.run());b.setMinHeight(dp(68));return b;}
     private Button navButton(String text,boolean active,Runnable action){Button b=new Button(this);b.setText(text);b.setTextSize(11);b.setAllCaps(false);b.setTextColor(active?Color.WHITE:MUTED);b.setBackground(round(active?NAVY_CARD:Color.TRANSPARENT,14));b.setOnClickListener(v->action.run());return b;}
     private LinearLayout page(boolean bottomPadding){LinearLayout p=column(Gravity.TOP,0);p.setPadding(dp(20),dp(18),dp(20),dp(bottomPadding?98:30));return p;}

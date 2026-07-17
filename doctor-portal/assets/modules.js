@@ -291,7 +291,7 @@ export async function openDeviceAssignment(
     supabase
       .from("devices")
       .select("id,display_name,lifecycle_status")
-      .in("lifecycle_status", ["available", "sanitized"])
+      .in("lifecycle_status", ["factory_new", "available", "sanitized"])
       .order("display_name"),
   ]);
   assert(patients);
@@ -310,66 +310,26 @@ export async function openDeviceAssignment(
       "required",
     )}${
       replace
-        ? selectField("Old device condition", "old_status", [
+        ? `${selectField("Old device condition", "old_status", [
             ["faulty", "Faulty"],
             ["return_pending", "Return pending"],
             ["under_repair", "Under repair"],
-          ])
+            ["lost", "Lost"],
+            ["retired", "Retired"],
+          ])}<label class="form-field full"><span>Replacement reason</span><textarea name="replacement_reason" required rows="3" placeholder="Describe the fault or replacement reason"></textarea></label>`
         : ""
     }`,
     replace ? "Replace device" : "Assign device",
     async (form) => {
       const selectedPatient = patientId || form.patient_id;
-      let replacementId = null;
-      const current = await supabase
-        .from("device_assignments")
-        .select("id,device_id")
-        .eq("patient_id", selectedPatient)
-        .eq("status", "active")
-        .maybeSingle();
-      if (current.data) {
-        replacementId = current.data.id;
-        await supabase
-          .from("device_assignments")
-          .update({
-            status: "closed",
-            ends_at: new Date().toISOString(),
-            closure_reason: replace ? "device_replacement" : "reassigned",
-          })
-          .eq("id", current.data.id);
-        await supabase
-          .from("devices")
-          .update({ lifecycle_status: form.old_status || "available" })
-          .eq("id", current.data.device_id);
-      }
       assert(
         await supabase
-          .from("device_assignments")
-          .insert({
-            organization_id: auth.profile.organization_id,
-            patient_id: selectedPatient,
-            device_id: form.device_id,
-            assigned_by: auth.profile.id,
-            replacement_for_assignment_id: replacementId,
+          .rpc("assign_or_replace_patient_device", {
+            p_patient_id: selectedPatient,
+            p_new_device_id: form.device_id,
+            p_old_device_status: form.old_status || "available",
+            p_reason: form.replacement_reason || (replace ? "device_replacement" : "device_assignment"),
           }),
-      );
-      assert(
-        await supabase
-          .from("devices")
-          .update({ lifecycle_status: "assigned" })
-          .eq("id", form.device_id),
-      );
-      await supabase
-        .from("patients")
-        .update({ program_status: "active" })
-        .eq("id", selectedPatient);
-      await recordAudit(
-        auth,
-        replace ? "device.replaced" : "device.assigned",
-        "device",
-        form.device_id,
-        replace ? "Patient device replaced" : "Device assigned to patient",
-        { patient_id: selectedPatient },
       );
       const { data: { session } } = await supabase.auth.getSession();
       let emailSent = false;

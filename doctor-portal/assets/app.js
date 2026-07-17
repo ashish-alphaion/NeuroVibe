@@ -231,7 +231,7 @@ async function loadPatientDetail(auth) {
   const id = new URLSearchParams(location.search).get("id");
   if (!id) { location.replace(new URL("patients.html", document.baseURI)); return; }
   const [patientResult, sessionsResult] = await Promise.all([
-    supabase.from("patients").select(`id, patient_code, full_name, date_of_birth, gender, phone, email, program_status, consent_status, device_assignments(id, status, starts_at, devices(id, display_name, lifecycle_status, firmware_version, last_seen_at, pending_record_count)), care_plans(id, name, status, min_hz, target_hz, max_hz, duration_seconds, max_duration_seconds, manual_control_allowed), appointments(id, title, scheduled_for, location, status)`).eq("id", id).maybeSingle(),
+    supabase.from("patients").select(`id, patient_code, full_name, date_of_birth, gender, phone, email, program_status, consent_status, device_assignments(id, status, starts_at, lease_expires_at, devices(id, hardware_id, display_name, lifecycle_status, firmware_version, last_seen_at, pending_record_count)), care_plans(id, name, status, min_hz, target_hz, max_hz, duration_seconds, max_duration_seconds, manual_control_allowed), appointments(id, title, scheduled_for, location, status)`).eq("id", id).maybeSingle(),
     supabase.from("therapy_sessions").select("id, started_at_utc, duration_seconds, requested_hz, estimated_hz, status, completion_reason, sync_source").eq("patient_id", id).order("started_at_utc", { ascending: false }).limit(20),
   ]);
   if (patientResult.error || !patientResult.data) {
@@ -264,6 +264,8 @@ function renderPatientDetail(patient, sessions, auth) {
   $("#plan-duration").textContent = plan ? `${Math.round(plan.duration_seconds / 60)} min` : "—";
   $("#device-title").textContent = device?.display_name || "Unassigned";
   $("#device-status").textContent = device?.lifecycle_status || "No device";
+  $("#device-hardware").textContent = device?.hardware_id || "Registers during first secure setup";
+  $("#device-lease").textContent = assignment?.lease_expires_at ? formatDateTime(assignment.lease_expires_at) : "Not issued";
   $("#device-firmware").textContent = device?.firmware_version || "—";
   $("#device-sync").textContent = formatDateTime(device?.last_seen_at);
   $("#pending-records").textContent = device?.pending_record_count ?? 0;

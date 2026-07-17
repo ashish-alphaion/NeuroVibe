@@ -22,7 +22,7 @@ npx supabase link --project-ref YOUR_PROJECT_REF
 npx supabase db push
 ```
 
-For a first one-off prototype, the two migration files can instead be executed in filename order from **Supabase Dashboard > SQL Editor**. Do not combine the two approaches afterward without repairing migration history.
+For a first one-off prototype, the migration files can instead be executed in filename order from **Supabase Dashboard > SQL Editor**. Existing projects adding device replacement must apply `202607170006_device_independence.sql` before deploying the matching portal, API, app, or firmware changes. Do not combine the two approaches afterward without repairing migration history.
 
 ## Bootstrap the first organization and administrator
 

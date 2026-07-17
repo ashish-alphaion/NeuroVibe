@@ -49,6 +49,7 @@ public final class NeuroSenseBleManager {
     private boolean scanning;
     private final StringBuilder framedJson = new StringBuilder();
     private boolean receivingJson;
+    private int expectedJsonLength;
     private final StringBuilder pendingRecord = new StringBuilder();
     private boolean receivingRecord;
     private String pendingRecordId = "";
@@ -163,7 +164,9 @@ public final class NeuroSenseBleManager {
 
         @Override public void onCharacteristicChanged(BluetoothGatt current, BluetoothGattCharacteristic characteristic, byte[] value) { consume(value); }
         @SuppressWarnings("deprecation")
-        @Override public void onCharacteristicChanged(BluetoothGatt current, BluetoothGattCharacteristic characteristic) { consume(characteristic.getValue()); }
+        @Override public void onCharacteristicChanged(BluetoothGatt current, BluetoothGattCharacteristic characteristic) {
+            consume(characteristic.getValue());
+        }
     };
 
     private void consume(byte[] value) {
@@ -196,8 +199,44 @@ public final class NeuroSenseBleManager {
             } else pendingRecord.append(part);
             return;
         }
-        if (part.startsWith("#JSONBEGIN:")) { receivingJson = true; framedJson.setLength(0); return; }
-        if ("#JSONEND".equals(part)) { receivingJson = false; String json = framedJson.toString(); main.post(() -> listener.onMessage(json)); return; }
-        if (receivingJson) framedJson.append(part); else main.post(() -> listener.onMessage(part));
+        if (part.startsWith("#JSONBEGIN:")) {
+            receivingJson = true;
+            framedJson.setLength(0);
+            try { expectedJsonLength = Integer.parseInt(part.substring(11)); }
+            catch (NumberFormatException ignored) { expectedJsonLength = 0; }
+            return;
+        }
+        if ("#JSONEND".equals(part)) {
+            if (!receivingJson) return;
+            deliverFramedJson();
+            return;
+        }
+        if (receivingJson) {
+            framedJson.append(part);
+            if (framedJson.length() > 8192) {
+                receivingJson = false;
+                expectedJsonLength = 0;
+                framedJson.setLength(0);
+                main.post(() -> listener.onError("The NeuroSense status response was too large."));
+            } else if (expectedJsonLength > 0 && framedJson.length() >= expectedJsonLength) {
+                deliverFramedJson();
+            }
+        } else if (part.startsWith("{") && part.endsWith("}")) {
+            main.post(() -> listener.onMessage(part));
+        }
+    }
+
+    private void deliverFramedJson() {
+        receivingJson = false;
+        int length = expectedJsonLength;
+        expectedJsonLength = 0;
+        if (length > 0 && framedJson.length() < length) {
+            framedJson.setLength(0);
+            main.post(() -> listener.onError("The NeuroSense status response was incomplete. Tap refresh to retry."));
+            return;
+        }
+        String json = length > 0 ? framedJson.substring(0, length) : framedJson.toString();
+        framedJson.setLength(0);
+        main.post(() -> listener.onMessage(json));
     }
 }

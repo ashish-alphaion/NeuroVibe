@@ -49,8 +49,9 @@ Error:
 | `get_status` | none | Same status payload used during normal operation |
 | `set_wifi` | `ssid`, `password` | Save Wi-Fi and attempt connection |
 | `set_server` | `api_base_url`, `api_token` | Save local API connection settings |
-| `set_assignment` | `patient_id`, `assignment_id` | Bind the device to an active assignment |
+| `set_assignment` | `patient_id`, `assignment_id`, `assignment_valid_until_epoch`, `server_time_epoch` | Bind the device to a renewable active assignment lease |
 | `set_limits` | `min_hz`, `target_hz`, `max_hz`, `max_duration_seconds` | Apply care-plan limits |
+| `activate_assignment` | none | Activate the fully provisioned assignment for BLE/offline operation |
 | `start_session` | `target_hz`, `duration_seconds`; optional `schedule_id` | Start an approved session |
 | `set_frequency` | `hz` | Adjust an active session if manual control is enabled |
 | `stop_session` | optional `reason` | Stop and record an interrupted session |
@@ -59,6 +60,72 @@ Error:
 | `ack_session` | `session_id` | Delete a locally queued record after server acknowledgement |
 | `sync_now` | none | Attempt one direct Wi-Fi upload |
 | `factory_reset` | confirmation `RESET_NEUROSENSE` | Erase configuration and queued records |
+
+## First-time connection and assignment
+
+The patient app must complete the setup in this order:
+
+1. **Phase 1 — Bluetooth:** scan for the `NeuroSense-*` advertisement, connect,
+   subscribe to notifications, and send `get_status`.
+2. Reject a device whose non-empty `device_id` differs from the device assigned
+   to the signed-in patient. A factory-empty device may continue.
+3. **Phase 2 — Secure assignment:** the authenticated patient app requests a
+   device-specific credential and active assignment lease from the API.
+4. Send identity, server credential, assignment lease and care limits as
+   separate BLE commands.
+5. Send `activate_assignment` only after every required command succeeds.
+6. The device is now usable through Bluetooth and can relay records through the
+   app. Direct device Wi-Fi is optional.
+7. If the patient enables direct Wi-Fi, send `set_wifi` and wait for the
+   asynchronous `wifi_result`; `ok/set_wifi` only confirms the attempt was
+   queued.
+
+Successful Wi-Fi result:
+
+```json
+{
+  "type": "wifi_result",
+  "phase": 2,
+  "connected": true,
+  "message": "Wi-Fi connected",
+  "ssid": "ClinicWiFi"
+}
+```
+
+Failed Wi-Fi result:
+
+```json
+{
+  "type": "wifi_result",
+  "phase": 2,
+  "connected": false,
+  "message": "Wi-Fi unable to connect",
+  "disconnect_reason_name": "authentication_failed_check_password"
+}
+```
+
+The app must never save the Wi-Fi password in phone preferences or logs.
+
+## Device-independent assignment lease
+
+`hardware_id` is generated from the ESP32 eFuse identity and never changes.
+`device_id` identifies the inventory unit. Patient and assignment values are
+replaceable configuration.
+
+```json
+{
+  "type": "set_assignment",
+  "patient_id": "PATIENT_UUID",
+  "assignment_id": "ASSIGNMENT_UUID",
+  "assignment_valid_until_epoch": 1784890000,
+  "server_time_epoch": 1784285200
+}
+```
+
+The firmware rejects new motor sessions after the assignment lease expires.
+An online device rechecks the server every 15 minutes. Replacing a device
+changes the old credential to sync-only, allowing records created before the
+replacement to upload while preventing assignment verification and motor use.
 
 ## App relay rule
 

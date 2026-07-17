@@ -21,7 +21,7 @@ export function getSupabaseAdmin() {
   return adminClient;
 }
 
-export async function verifyDeviceRequest(request, deviceId) {
+export async function verifyDeviceRequest(request, deviceId, allowedStatuses = ["active"]) {
   const token = getBearerToken(request);
   if (!token) return false;
 
@@ -38,7 +38,7 @@ export async function verifyDeviceRequest(request, deviceId) {
     .select("id")
     .eq("device_id", deviceId)
     .eq("token_hash", tokenHash)
-    .eq("status", "active")
+    .in("status", allowedStatuses)
     .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
     .maybeSingle();
 

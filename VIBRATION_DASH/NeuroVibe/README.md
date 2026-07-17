@@ -57,6 +57,18 @@ The device advertises as `NeuroSense-XXXXXX`, where the suffix comes from the ES
 
 The app should subscribe to the response characteristic, then write these commands separately.
 
+The first-time workflow is intentionally ordered as:
+
+```text
+Phase 1: Bluetooth connection and get_status
+Phase 2: identity, API credential, assignment and care-plan provisioning
+Then: activate_assignment
+Optional: set_wifi and wait for wifi_result
+```
+
+BLE advertising starts before any saved Wi-Fi reconnect attempt, so a failed
+network can never prevent the app from discovering the device.
+
 Short responses arrive as one JSON notification. A JSON response longer than one BLE payload arrives as:
 
 ```text
@@ -92,8 +104,20 @@ Create the unique device credential from the local backend using `POST /api/devi
 ### Assign the patient and device assignment
 
 ```json
-{"type":"set_assignment","patient_id":"PAT-...","assignment_id":"ASN-..."}
+{
+  "type":"set_assignment",
+  "patient_id":"PAT-...",
+  "assignment_id":"ASN-...",
+  "assignment_valid_until_epoch":1784890000,
+  "server_time_epoch":1784285200
+}
 ```
+
+The hardware ID and inventory Device ID are independent from the patient.
+Assignments are replaceable and use a renewable lease. The device refuses new
+motor sessions after lease expiry and rechecks an online assignment every 15
+minutes. A replaced device may upload only records created during its former
+assignment window.
 
 ### Apply care-plan limits
 

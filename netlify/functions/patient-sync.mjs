@@ -28,14 +28,21 @@ export default async (request) => {
 
     const { data: assignment, error: assignmentError } = await supabase
       .from("device_assignments")
-      .select("id,patient_id,device_id")
+      .select("id,patient_id,device_id,status,starts_at,ends_at,lease_expires_at")
       .eq("id", String(body.assignment_id))
       .eq("patient_id", patient.id)
       .eq("device_id", String(body.device_id))
-      .eq("status", "active")
       .maybeSingle();
     if (assignmentError) throw assignmentError;
-    if (!assignment || String(body.patient_id) !== patient.id) {
+    const startedAt = new Date(String(body.started_at_utc));
+    const startsAt = assignment ? new Date(assignment.starts_at) : null;
+    const endsAt = assignment?.ends_at ? new Date(assignment.ends_at) : null;
+    const leaseEndsAt = assignment?.lease_expires_at ? new Date(assignment.lease_expires_at) : null;
+    const occurredDuringAssignment = assignment && !Number.isNaN(startedAt.getTime()) &&
+      startedAt >= startsAt &&
+      ((assignment.status === "active" && (!leaseEndsAt || startedAt <= leaseEndsAt)) ||
+       (assignment.status === "closed" && endsAt && startedAt <= endsAt));
+    if (!assignment || !occurredDuringAssignment || String(body.patient_id) !== patient.id) {
       throw new ApiError(403, "invalid_assignment", "This usage record does not belong to the signed-in patient and assigned device.");
     }
 
