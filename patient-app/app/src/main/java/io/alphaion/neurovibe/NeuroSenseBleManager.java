@@ -21,19 +21,17 @@ import android.os.Looper;
 import org.json.JSONObject;
 
 import java.nio.charset.StandardCharsets;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.UUID;
 
 public final class NeuroSenseBleManager {
-    public interface Listener {
+    interface Listener {
         void onScanResult(BluetoothDevice device, int rssi);
         void onConnectionChanged(boolean connected, String deviceName);
         void onMessage(String json);
         void onError(String message);
     }
 
-    public static final UUID SERVICE_UUID = UUID.fromString("7b1e0001-7f34-4fd8-a912-6c38ef4a5201");
+    private static final UUID SERVICE_UUID = UUID.fromString("7b1e0001-7f34-4fd8-a912-6c38ef4a5201");
     private static final UUID COMMAND_UUID = UUID.fromString("7b1e0002-7f34-4fd8-a912-6c38ef4a5201");
     private static final UUID RESPONSE_UUID = UUID.fromString("7b1e0003-7f34-4fd8-a912-6c38ef4a5201");
     private static final UUID CCCD_UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
@@ -45,71 +43,86 @@ public final class NeuroSenseBleManager {
     private BluetoothLeScanner scanner;
     private BluetoothGatt gatt;
     private BluetoothGattCharacteristic command;
-    private String pendingDeviceName = "NeuroSense";
     private boolean scanning;
-    private final StringBuilder framedJson = new StringBuilder();
-    private boolean receivingJson;
-    private int expectedJsonLength;
-    private final StringBuilder pendingRecord = new StringBuilder();
-    private boolean receivingRecord;
-    private String pendingRecordId = "";
+    private String deviceName = "NeuroSense";
 
-    public NeuroSenseBleManager(Context context, Listener listener) {
+    NeuroSenseBleManager(Context context, Listener listener) {
         this.context = context.getApplicationContext();
         this.listener = listener;
         BluetoothManager manager = (BluetoothManager) context.getSystemService(Context.BLUETOOTH_SERVICE);
         adapter = manager == null ? null : manager.getAdapter();
     }
 
-    public boolean isBluetoothAvailable() { return adapter != null && adapter.isEnabled(); }
-    public boolean isConnected() { return gatt != null && command != null; }
+    boolean isBluetoothAvailable() {
+        return adapter != null && adapter.isEnabled();
+    }
 
-    @SuppressLint("MissingPermission")
-    public void startScan() {
-        if (!isBluetoothAvailable()) { listener.onError("Turn on Bluetooth to find NeuroSense."); return; }
-        stopScan();
-        scanner = adapter.getBluetoothLeScanner();
-        if (scanner == null) { listener.onError("Bluetooth scanner is unavailable."); return; }
-        scanning = true;
-        scanner.startScan(scanCallback);
-        main.postDelayed(this::stopScan, 12_000);
+    boolean isConnected() {
+        return gatt != null && command != null;
     }
 
     @SuppressLint("MissingPermission")
-    public void stopScan() {
+    void startScan() {
+        if (!isBluetoothAvailable()) {
+            listener.onError("Turn on Bluetooth to find NeuroSense.");
+            return;
+        }
+        stopScan();
+        scanner = adapter.getBluetoothLeScanner();
+        if (scanner == null) {
+            listener.onError("Bluetooth scanner is unavailable.");
+            return;
+        }
+        scanning = true;
+        scanner.startScan(scanCallback);
+        main.postDelayed(this::stopScan, 10_000);
+    }
+
+    @SuppressLint("MissingPermission")
+    void stopScan() {
         if (scanning && scanner != null) scanner.stopScan(scanCallback);
         scanning = false;
     }
 
     @SuppressLint("MissingPermission")
-    public void connect(BluetoothDevice device) {
-        stopScan(); disconnect();
-        listener.onConnectionChanged(false, "Connecting…");
-        gatt = device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE);
+    void connect(BluetoothDevice device) {
+        stopScan();
+        disconnect();
+        deviceName = device.getName() == null ? "NeuroSense" : device.getName();
+        gatt = device.connectGatt(context, false, callback, BluetoothDevice.TRANSPORT_LE);
     }
 
     @SuppressLint("MissingPermission")
-    public void disconnect() {
+    void disconnect() {
         command = null;
-        if (gatt != null) { gatt.disconnect(); gatt.close(); gatt = null; }
+        if (gatt != null) {
+            gatt.disconnect();
+            gatt.close();
+            gatt = null;
+        }
     }
 
     @SuppressLint("MissingPermission")
-    public boolean send(JSONObject payload) {
-        if (gatt == null || command == null) { listener.onError("Connect NeuroSense before sending a command."); return false; }
-        byte[] bytes = payload.toString().getBytes(StandardCharsets.UTF_8);
-        if (bytes.length > 512) { listener.onError("The device command is too large."); return false; }
+    boolean send(JSONObject payload) {
+        if (!isConnected()) {
+            listener.onError("Connect NeuroSense first.");
+            return false;
+        }
+        byte[] value = payload.toString().getBytes(StandardCharsets.UTF_8);
         if (Build.VERSION.SDK_INT >= 33) {
-            return gatt.writeCharacteristic(command, bytes, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == 0;
+            return gatt.writeCharacteristic(command, value, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == 0;
         }
         command.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
-        command.setValue(bytes);
+        command.setValue(value);
         return gatt.writeCharacteristic(command);
     }
 
-    public void sendType(String type) {
-        try { send(new JSONObject().put("type", type)); }
-        catch (Exception error) { listener.onError(error.getMessage()); }
+    void sendType(String type) {
+        try {
+            send(new JSONObject().put("type", type));
+        } catch (Exception error) {
+            listener.onError(error.getMessage());
+        }
     }
 
     private final ScanCallback scanCallback = new ScanCallback() {
@@ -117,12 +130,17 @@ public final class NeuroSenseBleManager {
         @Override public void onScanResult(int callbackType, ScanResult result) {
             BluetoothDevice device = result.getDevice();
             String name = device.getName();
-            if (name != null && name.startsWith("NeuroSense")) main.post(() -> listener.onScanResult(device, result.getRssi()));
+            if (name != null && name.startsWith("NeuroSense")) {
+                main.post(() -> listener.onScanResult(device, result.getRssi()));
+            }
         }
-        @Override public void onScanFailed(int errorCode) { main.post(() -> listener.onError("Device scan failed (" + errorCode + ").")); }
+
+        @Override public void onScanFailed(int errorCode) {
+            main.post(() -> listener.onError("Bluetooth scan failed (" + errorCode + ")."));
+        }
     };
 
-    private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
+    private final BluetoothGattCallback callback = new BluetoothGattCallback() {
         @SuppressLint("MissingPermission")
         @Override public void onConnectionStateChange(BluetoothGatt current, int status, int newState) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
@@ -136,107 +154,57 @@ public final class NeuroSenseBleManager {
 
         @SuppressLint("MissingPermission")
         @Override public void onServicesDiscovered(BluetoothGatt current, int status) {
-            if (status != BluetoothGatt.GATT_SUCCESS) { main.post(() -> listener.onError("NeuroSense service discovery failed.")); return; }
             BluetoothGattService service = current.getService(SERVICE_UUID);
-            if (service == null) { main.post(() -> listener.onError("This is not a compatible NeuroSense device.")); return; }
+            if (status != BluetoothGatt.GATT_SUCCESS || service == null) {
+                main.post(() -> listener.onError("This is not a compatible NeuroSense device."));
+                return;
+            }
             command = service.getCharacteristic(COMMAND_UUID);
             BluetoothGattCharacteristic response = service.getCharacteristic(RESPONSE_UUID);
-            if (command == null || response == null) { main.post(() -> listener.onError("NeuroSense BLE characteristics are missing.")); return; }
+            if (command == null || response == null) {
+                main.post(() -> listener.onError("NeuroSense Bluetooth controls are missing."));
+                return;
+            }
             current.setCharacteristicNotification(response, true);
             BluetoothGattDescriptor descriptor = response.getDescriptor(CCCD_UUID);
-            String name = current.getDevice().getName();
-            pendingDeviceName = name == null ? "NeuroSense" : name;
-            if (descriptor == null) { main.post(() -> listener.onError("NeuroSense notification channel is unavailable.")); return; }
+            if (descriptor == null) {
+                main.post(() -> listener.onError("Could not enable device responses."));
+                return;
+            }
             if (Build.VERSION.SDK_INT >= 33) {
-                int result = current.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-                if (result != 0) main.post(() -> listener.onError("Could not enable NeuroSense responses."));
+                current.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
             } else {
                 descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-                if (!current.writeDescriptor(descriptor)) main.post(() -> listener.onError("Could not enable NeuroSense responses."));
+                current.writeDescriptor(descriptor);
             }
         }
 
         @Override public void onDescriptorWrite(BluetoothGatt current, BluetoothGattDescriptor descriptor, int status) {
             if (!CCCD_UUID.equals(descriptor.getUuid())) return;
-            if (status == BluetoothGatt.GATT_SUCCESS) main.post(() -> listener.onConnectionChanged(true, pendingDeviceName));
-            else main.post(() -> listener.onError("NeuroSense responses could not be enabled."));
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                main.post(() -> listener.onConnectionChanged(true, deviceName));
+            } else {
+                main.post(() -> listener.onError("Could not enable device responses."));
+            }
         }
 
-        @Override public void onCharacteristicChanged(BluetoothGatt current, BluetoothGattCharacteristic characteristic, byte[] value) { consume(value); }
+        @Override public void onCharacteristicChanged(
+                BluetoothGatt current,
+                BluetoothGattCharacteristic characteristic,
+                byte[] value
+        ) {
+            deliver(value);
+        }
+
         @SuppressWarnings("deprecation")
         @Override public void onCharacteristicChanged(BluetoothGatt current, BluetoothGattCharacteristic characteristic) {
-            consume(characteristic.getValue());
+            deliver(characteristic.getValue());
         }
     };
 
-    private void consume(byte[] value) {
+    private void deliver(byte[] value) {
         if (value == null) return;
-        String part = new String(value, StandardCharsets.UTF_8);
-        if (part.startsWith("#BEGIN:")) {
-            String[] fields = part.split(":", 3);
-            pendingRecordId = fields.length > 1 ? fields[1] : "";
-            pendingRecord.setLength(0);
-            receivingRecord = true;
-            return;
-        }
-        if (part.startsWith("#END:")) {
-            String completedId = part.substring(5);
-            receivingRecord = false;
-            String json = pendingRecord.toString();
-            pendingRecord.setLength(0);
-            if (!pendingRecordId.equals(completedId)) {
-                main.post(() -> listener.onError("A device usage record was incomplete. It remains safely stored on NeuroSense."));
-                return;
-            }
-            main.post(() -> listener.onMessage(json));
-            return;
-        }
-        if (receivingRecord) {
-            if (pendingRecord.length() + part.length() > 8192) {
-                receivingRecord = false;
-                pendingRecord.setLength(0);
-                main.post(() -> listener.onError("A device usage record exceeded the safe transfer size."));
-            } else pendingRecord.append(part);
-            return;
-        }
-        if (part.startsWith("#JSONBEGIN:")) {
-            receivingJson = true;
-            framedJson.setLength(0);
-            try { expectedJsonLength = Integer.parseInt(part.substring(11)); }
-            catch (NumberFormatException ignored) { expectedJsonLength = 0; }
-            return;
-        }
-        if ("#JSONEND".equals(part)) {
-            if (!receivingJson) return;
-            deliverFramedJson();
-            return;
-        }
-        if (receivingJson) {
-            framedJson.append(part);
-            if (framedJson.length() > 8192) {
-                receivingJson = false;
-                expectedJsonLength = 0;
-                framedJson.setLength(0);
-                main.post(() -> listener.onError("The NeuroSense status response was too large."));
-            } else if (expectedJsonLength > 0 && framedJson.length() >= expectedJsonLength) {
-                deliverFramedJson();
-            }
-        } else if (part.startsWith("{") && part.endsWith("}")) {
-            main.post(() -> listener.onMessage(part));
-        }
-    }
-
-    private void deliverFramedJson() {
-        receivingJson = false;
-        int length = expectedJsonLength;
-        expectedJsonLength = 0;
-        if (length > 0 && framedJson.length() < length) {
-            framedJson.setLength(0);
-            main.post(() -> listener.onError("The NeuroSense status response was incomplete. Tap refresh to retry."));
-            return;
-        }
-        String json = length > 0 ? framedJson.substring(0, length) : framedJson.toString();
-        framedJson.setLength(0);
+        String json = new String(value, StandardCharsets.UTF_8);
         main.post(() -> listener.onMessage(json));
     }
 }
