@@ -1,216 +1,92 @@
-# NeuroSense ESP32-C3 Firmware
+# NeuroSense ESP32-C3 firmware
 
-This firmware turns the original motor test sketch into the local NeuroSense MVP device service.
+Firmware `0.9.0-ble-only` controls two ERM coin motors through a DRV8833. The
+ESP32-C3 does not join a network, store network credentials, call an HTTP API,
+or hold a server token. Bluetooth Low Energy is its only data transport.
 
 ## Hardware
 
 - ESP32-C3 Super Mini
-- DRV8833 motor driver
-- Two ERM coin vibration motors
-- Motor 1 pins: GPIO 2 and GPIO 3
-- Motor 2 pins: GPIO 4 and GPIO 5
+- DRV8833 dual H-bridge
+- Two 3 V ERM coin vibration motors
+- 10 µF / 25 V supply capacitor
 
-## Arduino setup
+Default motor pins:
 
-Install:
+| Signal | GPIO |
+|---|---:|
+| Motor 1 IN1 | 2 |
+| Motor 1 IN2 | 3 |
+| Motor 2 IN1 | 4 |
+| Motor 2 IN2 | 5 |
 
-1. Espressif ESP32 board package 3.x
-2. ArduinoJson 7.x
+Use a common ground between the ESP32-C3, driver and motor supply. Do not drive
+a motor directly from an ESP32 GPIO.
 
-Select:
+## Patient workflow
 
-```text
-Board: ESP32C3 Dev Module
-USB CDC On Boot: Enabled
-Upload Speed: 921600 or a stable lower value
-Flash Size: 4MB (32Mb)
-Partition Scheme: No OTA (2MB APP/2MB SPIFFS)
-Serial Monitor: 115200 baud
-```
+1. The doctor assigns an inventory Device ID to the patient.
+2. The signed-in NeuroVibe app connects to `NeuroSense-*` over BLE.
+3. The app validates the assignment with the server.
+4. The app sends Device ID, patient/assignment lease and care limits over BLE.
+5. The app controls motor runs over BLE.
+6. NeuroSense stores each run in LittleFS.
+7. The app requests queued records with `get_pending`.
+8. The app uploads each record using the patient's authenticated internet
+   session.
+9. Only after server acknowledgement, the app sends `ack_session`, allowing
+   NeuroSense to delete its queued copy.
 
-The full Wi-Fi + BLE + TLS firmware is larger than the default 1.25 MB
-application partition. Select **No OTA (2MB APP/2MB SPIFFS)** before compiling.
-The included `partitions.csv` documents the equivalent prototype layout, but
-Arduino CLI/IDE board settings determine the partition used for compilation.
-This layout has no OTA slot; upload firmware over USB.
-
-Equivalent CLI compile command:
-
-```text
-arduino-cli compile --fqbn esp32:esp32:esp32c3:CDCOnBoot=cdc,PartitionScheme=no_ota NeuroVibe
-```
-
-The BLE implementation follows the Arduino-ESP32 BLE server pattern documented by Espressif. ArduinoJson 7 is used for command parsing and session serialization.
+If the phone is offline, the app keeps an additional local copy and retries.
+The original remains on NeuroSense until acknowledged.
 
 ## BLE service
 
 ```text
-Service UUID: 7b1e0001-7f34-4fd8-a912-6c38ef4a5201
-Command/write: 7b1e0002-7f34-4fd8-a912-6c38ef4a5201
-Response/read/notify: 7b1e0003-7f34-4fd8-a912-6c38ef4a5201
-Requested MTU: 247
+Service:  7b1e0001-7f34-4fd8-a912-6c38ef4a5201
+Command:  7b1e0002-7f34-4fd8-a912-6c38ef4a5201
+Response: 7b1e0003-7f34-4fd8-a912-6c38ef4a5201
 ```
 
-The device advertises as `NeuroSense-XXXXXX`, where the suffix comes from the ESP32 eFuse MAC.
+Core commands are `get_status`, `set_identity`, `set_assignment`, `set_limits`,
+`activate_assignment`, `start_session`, `set_frequency`, `stop_session`,
+`emergency_stop`, `get_pending`, `ack_session`, and `factory_reset`.
 
-## Provisioning sequence
+See [BLE protocol](../../docs/ble-protocol.md) for payloads.
 
-The app should subscribe to the response characteristic, then write these commands separately.
+## Frequency and duration
 
-The first-time workflow is intentionally ordered as:
+- System input range: `0–230 Hz`
+- `0 Hz`: motors stopped
+- Patient duration range: `1–90 minutes`, further restricted by the active
+  care plan
+- PWM carrier: 20 kHz, 8-bit
 
-```text
-Phase 1: Bluetooth connection and get_status
-Phase 2: identity, API credential, assignment and care-plan provisioning
-Then: activate_assignment
-Optional: set_wifi and wait for wifi_result
-```
+The current frequency is an estimate derived from calibrated PWM. ERM motor
+speed varies with motor, load, voltage and mounting. A medical claim of exact
+mechanical vibration frequency requires an accelerometer, calibration data and
+closed-loop control.
 
-BLE advertising starts before any saved Wi-Fi reconnect attempt, so a failed
-network can never prevent the app from discovering the device.
+## Build and reset
 
-Short responses arrive as one JSON notification. A JSON response longer than one BLE payload arrives as:
+Required:
 
-```text
-#JSONBEGIN:<json_length>
-<one or more raw JSON chunks>
-#JSONEND
-```
+- Espressif Arduino-ESP32 3.x
+- ArduinoJson 7.x
+- LittleFS and BLE libraries included with the ESP32 core
 
-The app must concatenate the chunks before parsing the JSON.
-
-### Read device information
-
-```json
-{"type":"get_info"}
-```
-
-### Configure Wi-Fi
-
-```json
-{"type":"set_wifi","ssid":"ClinicWiFi","password":"wifi-password"}
-```
-
-### Configure the NeuroVibe API
-
-```json
-{"type":"set_server","api_base_url":"https://neurovibeapi.netlify.app","api_token":"DEVICE_BEARER_TOKEN"}
-```
-
-The Netlify base URL is compiled as the default, but the app must still provision the device-specific token. Plain HTTP is accepted only for `10.x.x.x` and `192.168.x.x` private-LAN development addresses. Never use `localhost`, because it means the ESP32 itself.
-
-Create the unique device credential from the local backend using `POST /api/devices/{device_id}/credential`, then provision the returned one-time token through this command. Do not provision a doctor login token to the device.
-
-### Assign the patient and device assignment
-
-```json
-{
-  "type":"set_assignment",
-  "patient_id":"PAT-...",
-  "assignment_id":"ASN-...",
-  "assignment_valid_until_epoch":1784890000,
-  "server_time_epoch":1784285200
-}
-```
-
-The hardware ID and inventory Device ID are independent from the patient.
-Assignments are replaceable and use a renewable lease. The device refuses new
-motor sessions after lease expiry and rechecks an online assignment every 15
-minutes. A replaced device may upload only records created during its former
-assignment window.
-
-### Apply care-plan limits
-
-```json
-{
-  "type":"set_limits",
-  "min_hz":100,
-  "target_hz":150,
-  "max_hz":180,
-  "max_duration_seconds":900,
-  "manual_control_allowed":true
-}
-```
-
-## Session commands
-
-### Start
-
-```json
-{
-  "type":"start_session",
-  "schedule_id":"SCH-...",
-  "target_hz":150,
-  "duration_seconds":600
-}
-```
-
-### Change frequency
-
-```json
-{"type":"set_frequency","hz":160}
-```
-
-Sending `0` stops and records the active session; a session cannot start at 0 Hz.
-
-### Normal stop
-
-```json
-{"type":"stop_session","reason":"patient_stop"}
-```
-
-### Emergency stop
-
-```json
-{"type":"emergency_stop"}
-```
-
-### Read status
-
-```json
-{"type":"get_status"}
-```
-
-## Offline session transfer
-
-Request pending records:
-
-```json
-{"type":"get_pending"}
-```
-
-Each record is sent through response notifications as:
-
-```text
-#BEGIN:<session_id>:<json_length>
-<one or more raw JSON chunks>
-#END:<session_id>
-```
-
-After the phone uploads the record and receives server acknowledgement, it must send:
-
-```json
-{"type":"ack_session","session_id":"SES-..."}
-```
-
-The device deletes the local event only after this acknowledgement or a successful direct API upload.
-
-## Factory reset
+Compile for the ESP32-C3 Super Mini target. Factory reset is available through:
 
 ```json
 {"type":"factory_reset","confirmation":"RESET_NEUROSENSE"}
 ```
 
-Factory reset clears Wi-Fi, server configuration, assignment, care-plan limits and queued session records, then restarts the device.
+Factory reset erases assignment, care-plan limits and queued records, then
+restarts the device. It does not erase the immutable eFuse-derived hardware ID.
 
-## Safety and prototype limitations
+## Prototype safety
 
-- The hard software limit is 230 Hz.
-- The patient-specific care-plan range is enforced independently.
-- The motors stop when the BLE app disconnects during an app-controlled session.
-- Completed/interrupted sessions are written to LittleFS before synchronization.
-- An active-session checkpoint is stored in NVS and recovered as interrupted after an unexpected reset or power loss.
-- New sessions are blocked when 250 records are pending, preventing uncontrolled filesystem growth.
-- ERM vibration frequency is estimated from PWM calibration, not measured.
-- HTTPS validates the Netlify certificate chain with the embedded ISRG Root X1 CA; insecure TLS is never enabled. The CA must be maintained through firmware updates before expiry or certificate-chain changes.
-- Wi-Fi credentials and API credentials are stored in ESP32 Preferences. Enable NVS encryption, flash encryption, secure boot and authenticated BLE enrollment before a production or clinical deployment.
+This is prototype firmware, not certified medical-device software. Production
+work requires authenticated/encrypted BLE, secure boot, flash/NVS encryption,
+hardware fail-safe review, validated motor output, risk management, audit
+controls, privacy review and applicable medical-device verification.

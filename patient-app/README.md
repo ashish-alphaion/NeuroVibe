@@ -1,40 +1,36 @@
-# NeuroVibe Patient Android App
+# NeuroVibe Android patient app
 
-Native Android prototype for patients only. It includes the supplied welcome,
-dashboard and active-session visual direction plus schedule, history, profile,
-device connection, Wi-Fi provisioning, symptom notes and safety guidance.
+NeuroVibe is the patient-only Android client for NeuroSense.
 
-## Run
+It provides:
 
-Open `patient-app` in Android Studio, or build from a terminal with:
+- persistent patient sign-in
+- doctor-assigned Device ID verification
+- BLE connection and assignment-lease installation
+- 1–230 Hz control (`0 Hz` is stop)
+- 1–90 minute duration control
+- emergency stop
+- appointment notifications
+- BLE retrieval of queued device-usage records
+- authenticated server upload through the phone
+- encrypted app-private retry storage when phone internet is unavailable
 
-```text
-gradlew.bat assembleDebug
+NeuroSense never receives an SSID, network password, API URL or API token. The
+phone is the only internet-facing component in the patient workflow.
+
+Build:
+
+```powershell
+cd patient-app
+.\gradlew.bat assembleDebug
 ```
 
-The debug APK is generated at:
+Debug APK:
 
 ```text
-app/build/outputs/apk/debug/app-debug.apk
+patient-app/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-## NeuroSense BLE
-
-The app scans only for devices advertised as `NeuroSense-*` and communicates
-using the service and characteristics documented in `docs/ble-protocol.md`.
-It implements device information/status, Wi-Fi provisioning, session start,
-frequency updates, normal stop and emergency stop.
-
-## Patient authentication
-
-Patient accounts are created from the NeuroVibe doctor portal. The enrollment
-endpoint invites the patient through Supabase Auth and links the Auth UUID to
-`profiles.id` and `patients.user_id`.
-
-The patient opens the invitation email on the Android device. The callback
-`neurovibe://auth/callback` opens the app, where the patient creates a private
-password. Subsequent sign-ins use that same email and password. The app rejects
-staff accounts and Auth users that are not linked to a patient record.
-
-Add `neurovibe://auth/callback` to the Supabase Authentication redirect URL
-allow list before testing invitations.
+Required Android permissions are Bluetooth scan/connect, notifications, and
+legacy location only on Android versions that require it for BLE discovery.
+Internet permission is used solely by the app for Supabase/Netlify calls.

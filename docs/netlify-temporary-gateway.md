@@ -1,68 +1,39 @@
-# NeuroVibe Netlify API gateway
+# NeuroVibe Netlify gateway
 
-This deployment provides one stable base URL for the ESP32-C3, patient app, and doctor portal:
+Netlify hosts the doctor portal and server-side functions. Supabase stores
+identity, assignments, care plans, appointments, audit events, and device usage.
+
+## Required Netlify environment
 
 ```text
-https://neurovibeapi.netlify.app
+SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+SUPABASE_SECRET_KEY=YOUR_SERVER_ONLY_SECRET
+DOCTOR_API_TOKEN=OPTIONAL_LEGACY_READ_TOKEN
 ```
 
-The HTML page is a status dashboard. Netlify Functions are the actual API, and Supabase PostgreSQL is the structured data store.
+Do not place the Supabase secret or database password in HTML, Android code,
+ESP32 firmware, or Git.
 
-## Deploy
+## Patient record path
 
-1. Push the repository to GitHub and import it as a new Netlify project.
-2. Netlify reads `netlify.toml`; no build command is required.
-3. In **Project configuration > Environment variables**, add:
-   - `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and server-only `SUPABASE_SECRET_KEY`.
-   - `DEVICE_TOKEN_PEPPER`: a long cryptographically random value.
-   - `DEVICE_API_TOKEN`: a temporary token used until device-specific enrollment is active.
-   - `DOCTOR_API_TOKEN`: a temporary token used until portal authentication is active.
-   - `ALLOWED_ORIGIN`: `https://neurovibeapi.netlify.app`.
-4. Deploy and visit `/`; the page should report that `/api/health` is online.
-
-Do not place either token in `public/index.html` or commit it to GitHub.
-
-## Configure the ESP32
-
-Send the firmware's BLE `set_server` command using:
-
-```json
-{
-  "type": "set_server",
-  "api_base_url": "https://neurovibeapi.netlify.app",
-  "api_token": "THE_DEVICE_API_TOKEN"
-}
+```text
+NeuroSense --BLE--> NeuroVibe Android app --HTTPS--> /api/patient-sync --> Supabase
 ```
 
-The firmware already posts queued records to `/api/therapy-sessions` with a bearer token. Before real deployment, configure `WiFiClientSecure` with certificate verification; do not disable TLS verification for patient data.
+The Android app authenticates as the patient. The backend verifies that the
+record's device and assignment belong to that patient before ingestion. The app
+sends `ack_session` over BLE only after the server acknowledges the record.
 
-## API
+`POST /api/therapy-sessions` no longer accepts device uploads and returns
+`410 mobile_relay_required`. NeuroSense has no HTTP client, network credentials,
+API URL, or device API token.
 
-### Health
+## Deployment checks
 
-```http
-GET /api/health
-```
-
-### Upload a session
-
-```http
-POST /api/therapy-sessions
-Authorization: Bearer DEVICE_API_TOKEN
-Content-Type: application/json
-```
-
-The body format matches the current ESP32 firmware. `requested_hz` is rejected if it is outside 0-230 Hz. The `session_id` is used for idempotency, so a safe retry returns `already_accepted` instead of creating a duplicate.
-
-### Read the latest sessions
-
-```http
-GET /api/therapy-sessions
-Authorization: Bearer DOCTOR_API_TOKEN
-```
-
-This prototype endpoint returns at most 100 records from Supabase. It is intended for development with fabricated data, not clinical use.
-
-## Database migration
-
-Apply all SQL files in `supabase/migrations` in filename order. The third migration installs the atomic, idempotent session-ingestion function used by this gateway.
+- `GET /api/health` confirms the function runtime and Supabase connection.
+- Apply all migrations in timestamp order, including the BLE-only transport
+  cleanup migration.
+- Configure Android's Supabase URL and publishable key; keep the secret key
+  server-side.
+- Use fabricated data only until the full privacy, security, clinical, and
+  regulatory controls are implemented.

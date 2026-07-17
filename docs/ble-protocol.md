@@ -1,4 +1,4 @@
-# NeuroSense BLE Protocol v0.1
+# NeuroSense BLE Protocol v0.2
 
 ## Transport
 
@@ -47,8 +47,7 @@ Error:
 |---|---|---|
 | `get_info` | none | Read device, assignment, limits and sync state |
 | `get_status` | none | Same status payload used during normal operation |
-| `set_wifi` | `ssid`, `password` | Save Wi-Fi and attempt connection |
-| `set_server` | `api_base_url`, `api_token` | Save local API connection settings |
+| `set_identity` | `device_id` | Install the doctor-assigned inventory identity on a factory-empty device |
 | `set_assignment` | `patient_id`, `assignment_id`, `assignment_valid_until_epoch`, `server_time_epoch` | Bind the device to a renewable active assignment lease |
 | `set_limits` | `min_hz`, `target_hz`, `max_hz`, `max_duration_seconds` | Apply care-plan limits |
 | `activate_assignment` | none | Activate the fully provisioned assignment for BLE/offline operation |
@@ -58,7 +57,6 @@ Error:
 | `emergency_stop` | none | Immediately stop the motors |
 | `get_pending` | none | Begin chunked transfer of queued records |
 | `ack_session` | `session_id` | Delete a locally queued record after server acknowledgement |
-| `sync_now` | none | Attempt one direct Wi-Fi upload |
 | `factory_reset` | confirmation `RESET_NEUROSENSE` | Erase configuration and queued records |
 
 ## First-time connection and assignment
@@ -70,41 +68,16 @@ The patient app must complete the setup in this order:
 2. Reject a device whose non-empty `device_id` differs from the device assigned
    to the signed-in patient. A factory-empty device may continue.
 3. **Phase 2 — Secure assignment:** the authenticated patient app requests a
-   device-specific credential and active assignment lease from the API.
-4. Send identity, server credential, assignment lease and care limits as
-   separate BLE commands.
+   active assignment lease from the API.
+4. Send identity, assignment lease and care limits as separate BLE commands.
 5. Send `activate_assignment` only after every required command succeeds.
-6. The device is now usable through Bluetooth and can relay records through the
-   app. Direct device Wi-Fi is optional.
-7. If the patient enables direct Wi-Fi, send `set_wifi` and wait for the
-   asynchronous `wifi_result`; `ok/set_wifi` only confirms the attempt was
-   queued.
+6. The device is now usable through Bluetooth.
+7. Request `get_pending`; upload each received record with the signed-in
+   patient's session, then send `ack_session` only after server acknowledgement.
 
-Successful Wi-Fi result:
-
-```json
-{
-  "type": "wifi_result",
-  "phase": 2,
-  "connected": true,
-  "message": "Wi-Fi connected",
-  "ssid": "ClinicWiFi"
-}
-```
-
-Failed Wi-Fi result:
-
-```json
-{
-  "type": "wifi_result",
-  "phase": 2,
-  "connected": false,
-  "message": "Wi-Fi unable to connect",
-  "disconnect_reason_name": "authentication_failed_check_password"
-}
-```
-
-The app must never save the Wi-Fi password in phone preferences or logs.
+NeuroSense never receives network credentials or server secrets. It has no
+direct HTTP route; the Android app is the only internet-facing client in the
+patient workflow.
 
 ## Device-independent assignment lease
 

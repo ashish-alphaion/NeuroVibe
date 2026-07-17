@@ -54,20 +54,19 @@ Find the URL and keys in **Project Settings > API** (the exact dashboard label m
 SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
 SUPABASE_PUBLISHABLE_KEY=your-publishable-key
 SUPABASE_SECRET_KEY=your-server-secret-key
-DEVICE_TOKEN_PEPPER=another-long-random-secret
 ```
 
-Put these in Netlify environment variables. Never put `SUPABASE_SECRET_KEY`, a legacy `service_role` key, the database password, or `DEVICE_TOKEN_PEPPER` in `public/index.html`, mobile code, ESP32 firmware, or Git.
+Put these in Netlify environment variables. Never put `SUPABASE_SECRET_KEY`, a legacy `service_role` key, or the database password in public HTML, mobile code, ESP32 firmware, or Git.
 
 ## Tables and workflows covered
 
 - Organization and doctor/patient profiles
 - Patient enrollment, consent and exit lifecycle
-- Device registry, one-time enrollment and revocable credentials
+- Device registry, immutable hardware binding and renewable assignment leases
 - Device assignment and faulty-device replacement history
 - Versioned care plans constrained to 0–230 Hz
 - Individual and batch-created schedules
-- Therapy records uploaded through device Wi-Fi or mobile BLE relay
+- Therapy records transferred over BLE and uploaded by the authenticated patient app
 - Idempotent sync receipts
 - Device heartbeat/online status
 - Patient notifications

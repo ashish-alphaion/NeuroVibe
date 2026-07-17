@@ -21,7 +21,7 @@ recorded as estimated frequency.
 7. A replaced device cannot start new motor sessions.
 8. A replaced device may synchronize records created during its former assignment.
 9. The device stores records until the server acknowledges them.
-10. Bluetooth/app operation is primary; direct ESP32 Wi-Fi is optional.
+10. NeuroSense has no Wi-Fi workflow. Bluetooth is its only data transport.
 
 ## System components
 
@@ -39,8 +39,8 @@ The associated device lifecycle may continue as:
 
 `FAULTY`, `RETURN_PENDING`, `UNDER_REPAIR`, `SANITIZED`, `RETIRED` or `LOST`.
 
-Every active assignment has a renewable lease. The app renews a lease before
-expiry and an online device rechecks the server every 15 minutes.
+Every active assignment has a renewable lease. The signed-in app renews the
+lease and transfers it to the device over BLE before expiry.
 
 ## First-time patient flow
 
@@ -48,24 +48,17 @@ expiry and an online device rechecks the server every 15 minutes.
 2. Patient signs in; the app downloads the active assignment.
 3. Patient connects the matching NeuroSense over BLE.
 4. App verifies the immutable hardware identity or binds it on first secure setup.
-5. Authenticated app obtains a device-specific credential and lease from the API.
-6. App sends identity, credential, assignment and care limits over BLE.
+5. Authenticated app obtains an assignment lease from the API.
+6. App sends identity, assignment lease and care limits over BLE.
 7. App sends `activate_assignment`.
-8. Device is ready without direct Wi-Fi.
-9. Patient may optionally configure device Wi-Fi for direct uploads.
+8. Device is ready after the app installs the assignment lease over Bluetooth.
 
 ## Usage and synchronization
 
 The ESP32 records assignment, device, timestamps, requested/estimated frequency,
 PWM, duration, outcome and sync route. It first writes the record to LittleFS.
 
-Primary route:
-
 `NeuroSense -> BLE -> NeuroVibe -> HTTPS API -> PostgreSQL`
-
-Optional route:
-
-`NeuroSense -> Wi-Fi -> HTTPS API -> PostgreSQL`
 
 The app acknowledges the BLE record only after the API accepts it.
 
@@ -76,7 +69,7 @@ condition and replacement reason. One database transaction:
 
 1. closes the old assignment;
 2. expires its lease;
-3. converts the old credential to sync-only;
+3. revokes any historical device credential;
 4. changes the old device lifecycle state;
 5. creates the new assignment;
 6. marks the new device assigned;
@@ -118,5 +111,5 @@ offers stored-record recovery only; motor controls stay locked.
 2. Deploy Netlify functions.
 3. Deploy doctor portal.
 4. Install the matching Android APK.
-5. Flash the matching firmware with the No-OTA 2 MB application partition.
+5. Flash the matching BLE-only firmware.
 6. Execute the acceptance scenarios using fabricated patient data.

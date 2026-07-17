@@ -85,8 +85,6 @@ final class SupabaseAuthClient {
     }
 
     static final class DeviceProvisioning {
-        final String apiBaseUrl;
-        final String apiToken;
         final String patientId;
         final String assignmentId;
         final long assignmentValidUntilEpoch;
@@ -94,8 +92,6 @@ final class SupabaseAuthClient {
         final JSONObject carePlan;
 
         DeviceProvisioning(JSONObject value) throws Exception {
-            apiBaseUrl = value.getString("api_base_url");
-            apiToken = value.getString("api_token");
             patientId = value.getString("patient_id");
             assignmentId = value.getString("assignment_id");
             assignmentValidUntilEpoch = value.optLong("assignment_valid_until_epoch", 0);

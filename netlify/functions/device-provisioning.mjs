@@ -1,4 +1,3 @@
-import { createHmac, randomBytes } from "node:crypto";
 import { ApiError, getBearerToken, json, options, readSmallJson } from "./_shared.mjs";
 import { getSupabaseAdmin } from "./_supabase.mjs";
 
@@ -58,15 +57,9 @@ export default async (request) => {
       .eq("patient_id", patient.id).eq("status", "active").maybeSingle();
     if (planError) throw planError;
 
-    const pepper = process.env.DEVICE_TOKEN_PEPPER?.trim();
-    if (!pepper) throw new ApiError(503, "provisioning_unavailable", "Device token provisioning is not configured on the server.");
-    const deviceToken = `nvd_${randomBytes(32).toString("base64url")}`;
-    const tokenHash = createHmac("sha256", pepper).update(deviceToken, "utf8").digest("hex");
-
     const nowDate = new Date();
     const now = nowDate.toISOString();
     const leaseExpiresAt = new Date(nowDate.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
-    const credentialExpiresAt = new Date(nowDate.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString();
     const { error: leaseError } = await supabase.from("device_assignments").update({
       lease_expires_at: leaseExpiresAt,
       last_renewed_at: now,
@@ -75,17 +68,8 @@ export default async (request) => {
 
     const { error: revokeError } = await supabase.from("device_credentials")
       .update({ status: "revoked", revoked_at: now })
-      .eq("device_id", deviceId).eq("status", "active");
+      .eq("device_id", deviceId).in("status", ["active", "sync_only"]);
     if (revokeError) throw revokeError;
-    const { error: credentialError } = await supabase.from("device_credentials").insert({
-      device_id: deviceId,
-      assignment_id: assignment.id,
-      token_hash: tokenHash,
-      status: "active",
-      created_by: patient.doctor_id,
-      expires_at: credentialExpiresAt,
-    });
-    if (credentialError) throw credentialError;
 
     await supabase.from("devices").update({ lifecycle_status: "active" }).eq("id", deviceId);
     await supabase.from("patients").update({ program_status: "active" }).eq("id", patient.id);
@@ -106,8 +90,6 @@ export default async (request) => {
       assignment_valid_until: leaseExpiresAt,
       assignment_valid_until_epoch: Math.floor(new Date(leaseExpiresAt).getTime() / 1000),
       server_time_epoch: Math.floor(nowDate.getTime() / 1000),
-      api_base_url: process.env.PUBLIC_API_BASE_URL?.trim() || "https://neurovibeapi.netlify.app",
-      api_token: deviceToken,
       care_plan: plan,
     });
   } catch (error) {

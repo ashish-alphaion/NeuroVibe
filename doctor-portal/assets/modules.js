@@ -751,7 +751,7 @@ async function loadSessions() {
   root.innerHTML =
     pageHead(
       "Device usage",
-      "Vibration-run records synchronized through device Wi-Fi or the patient app.",
+      "Vibration-run records transferred by Bluetooth and synchronized through the patient app.",
       '<button class="btn btn-secondary" id="export-sessions">Export CSV</button>',
     ) +
     '<section class="metric-grid" id="session-metrics"></section><section class="card"><div class="table-wrap"><table class="data-table"><thead><tr><th>Started</th><th>Patient</th><th>Device</th><th>Frequency</th><th>Duration</th><th>Route</th><th>Status</th></tr></thead><tbody id="session-body"></tbody></table></div></section>';

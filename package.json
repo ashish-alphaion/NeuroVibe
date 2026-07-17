@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "netlify dev",
-    "check": "node --check netlify/functions/_shared.mjs && node --check netlify/functions/_supabase.mjs && node --check netlify/functions/health.mjs && node --check netlify/functions/therapy-sessions.mjs && node --check netlify/functions/staff.mjs && node --check netlify/functions/patients.mjs && node --check netlify/functions/device-provisioning.mjs && node --check netlify/functions/device-check.mjs && node --check netlify/functions/patient-sync.mjs && node --check netlify/functions/assignment-email.mjs && node --check netlify/functions/reset-prototype.mjs"
+    "check": "node --check netlify/functions/_shared.mjs && node --check netlify/functions/_supabase.mjs && node --check netlify/functions/health.mjs && node --check netlify/functions/therapy-sessions.mjs && node --check netlify/functions/staff.mjs && node --check netlify/functions/patients.mjs && node --check netlify/functions/device-provisioning.mjs && node --check netlify/functions/patient-sync.mjs && node --check netlify/functions/assignment-email.mjs && node --check netlify/functions/reset-prototype.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.50.0"

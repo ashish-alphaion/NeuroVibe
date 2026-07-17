@@ -4,10 +4,10 @@
 // Features:
 // - Stable device identity derived from the ESP32 eFuse MAC and saved in NVS
 // - BLE setup, control, status and offline-record transfer
-// - Persistent Wi-Fi, server, assignment and care-plan configuration
+// - Persistent assignment and care-plan configuration
 // - Strict 0-230 Hz system limit plus doctor-defined patient limits
 // - LittleFS-backed session queue that survives reboot and loss of connectivity
-// - Direct Wi-Fi upload to the NeuroVibe API with duplicate-safe session IDs
+// - Mobile-app relay: queued records leave the device only through BLE
 //
 // Required library: ArduinoJson 7.x
 // Required ESP32 board package: Espressif Arduino-ESP32 3.x
@@ -20,12 +20,8 @@
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
-#include <HTTPClient.h>
 #include <LittleFS.h>
 #include <Preferences.h>
-#include <WiFi.h>
-#include <WiFiClientSecure.h>
-#include <esp_wifi.h>
 #include <sys/time.h>
 #include <time.h>
 
@@ -47,42 +43,8 @@ constexpr float SYSTEM_MAX_HZ = 230.0f;
 constexpr float CALIBRATION_MIN_RUNNING_HZ = 60.0f;
 constexpr int PWM_AT_MIN_RUNNING_HZ = 70;
 constexpr int PWM_AT_MAX_RUNNING_HZ = 255;
-constexpr char FIRMWARE_VERSION[] = "0.8.0-ble-primary";
+constexpr char FIRMWARE_VERSION[] = "0.9.0-ble-only";
 constexpr uint32_t MAX_PATIENT_DURATION_SECONDS = 90 * 60;
-constexpr char DEFAULT_API_BASE_URL[] = "https://neurovibeapi.netlify.app";
-
-// Netlify currently serves a Let's Encrypt chain rooted at ISRG Root X1.
-// Replace this CA in a firmware update before its 2035 expiry, or move to an
-// embedded maintained CA bundle. Never use setInsecure() for patient data.
-static const char ISRG_ROOT_X1[] PROGMEM = R"CERT(
------BEGIN CERTIFICATE-----
-MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAwTzELMAkGA1UE
-BhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2VhcmNoIEdyb3VwMRUwEwYDVQQD
-EwxJU1JHIFJvb3QgWDEwHhcNMTUwNjA0MTEwNDM4WhcNMzUwNjA0MTEwNDM4WjBPMQswCQYDVQQG
-EwJVUzEpMCcGA1UEChMgSW50ZXJuZXQgU2VjdXJpdHkgUmVzZWFyY2ggR3JvdXAxFTATBgNVBAMT
-DElTUkcgUm9vdCBYMTCCAiIwDQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIBAK3oJHP0FDfzm54r
-Vygch77ct984kIxuPOZXoHj3dcKi/vVqbvYATyjb3miGbESTtrFj/RQSa78f0uoxmyF+0TM8ukj1
-3Xnfs7j/EvEhmkvBioZxaUpmZmyPfjxwv60pIgbz5MDmgK7iS4+3mX6UA5/TR5d8mUgjU+g4rk8K
-b4Mu0UlXjIB0ttov0DiNewNwIRt18jA8+o+u3dpjq+sWT8KOEUt+zwvo/7V3LvSye0rgTBIlDHCN
-Aymg4VMk7BPZ7hm/ELNKjD+Jo2FR3qyHB5T0Y3HsLuJvW5iB4YlcNHlsdu87kGJ55tukmi8mxdAQ
-4Q7e2RCOFvu396j3x+UCB5iPNgiV5+I3lg02dZ77DnKxHZu8A/lJBdiB3QW0KtZB6awBdpUKD9jf
-1b0SHzUvKBds0pjBqAlkd25HN7rOrFleaJ1/ctaJxQZBKT5ZPt0m9STJEadao0xAH0ahmbWnOlFu
-hjuefXKnEgV4We0+UXgVCwOPjdAvBbI+e0ocS3MFEvzG6uBQE3xDk3SzynTnjh8BCNAw1FtxNrQH
-usEwMFxIt4I7mKZ9YIqioymCzLq9gwQbooMDQaHWBfEbwrbwqHyGO0aoSCqI3Haadr8faqU9GY/r
-OPNk3sgrDQoo//fb4hVC1CLQJ13hef4Y53CIrU7m2Ys6xt0nUW7/vGT1M0NPAgMBAAGjQjBAMA4G
-A1UdDwEB/wQEAwIBBjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBR5tFnme7bl5AFzgAiIyBpY
-9umbbjANBgkqhkiG9w0BAQsFAAOCAgEAVR9YqbyyqFDQDLHYGmkgJykIrGF1XIpu+ILlaS/V9lZL
-ubhzEFnTIZd+50xx+7LSYK05qAvqFyFWhfFQDlnrzuBZ6brJFe+GnY+EgPbk6ZGQ3BebYhtF8GaV
-0nxvwuo77x/Py9auJ/GpsMiu/X1+mvoiBOv/2X/qkSsisRcOj/KKNFtY2PwByVS5uCbMiogziUwt
-hDyC3+6WVwW6LLv3xLfHTjuCvjHIInNzktHCgKQ5ORAzI4JMPJ+GslWYHb4phowim57iaztXOoJw
-TdwJx4nLCgdNbOhdjsnvzqvHu7UrTkXWStAmzOVyyghqpZXjFaH3pO3JLF+l+/+sKAIuvtd7u+Nx
-e5AW0wdeRlN8NwdCjNPElpzVmbUq4JUagEiuTDkHzsxHpFKVK7q4+63SM1N95R1NbdWhscdCb+ZA
-JzVcoyi3B43njTOQ5yOf+1CceWxG1bQVs5ZufpsMljq4Ui0/1lvh+wjChP4kqKOJ2qxq4RgqsahD
-YVvTH9w7jXbyLeiNdd8XM2w9U/t7y0Ff/9yi0GE44Za4rF2LN9d11TPAmRGunUHBcnWEvgJBQl9n
-JEiU0Zsnvgc/ubhPgXRR4Xq37Z0j4r7g1SgEEzwxA57demyPxgcYxn/eR44/KJ4EBs+lVDR3veyJ
-m+kXQ99b21/+jh5Xos1AnX5iItreGCc=
------END CERTIFICATE-----
-)CERT";
 
 // -----------------------------------------------------------------------------
 // BLE protocol
@@ -102,16 +64,8 @@ bool bleConnected = false;
 bool previousBleConnected = false;
 bool stopAfterBleDisconnect = false;
 bool pendingTransferRequested = false;
-bool wifiConnectRequested = false;
-bool syncRequested = false;
 bool storageFault = false;
-bool serverEnrollmentVerified = false;
-int lastWiFiStatusCode = WL_IDLE_STATUS;
-volatile int lastWiFiDisconnectReason = 0;
-bool wifiAttemptInProgress = false;
-int lastWiFiChannel = 0;
-int lastWiFiRssi = 0;
-String lastWiFiDiagnostic = "not_attempted";
+bool assignmentActivated = false;
 
 // -----------------------------------------------------------------------------
 // Persistent configuration
@@ -123,10 +77,6 @@ struct DeviceConfiguration {
   String hardwareId;
   String deviceId;
   String displayName;
-  String wifiSsid;
-  String wifiPassword;
-  String apiBaseUrl;
-  String apiToken;
   String patientId;
   String assignmentId;
   uint64_t assignmentValidUntilEpoch = 0;
@@ -163,26 +113,7 @@ uint32_t deviceSequence = 0;
 
 constexpr char QUEUE_FILE[] = "/session_queue.jsonl";
 constexpr char QUEUE_TEMP_FILE[] = "/session_queue.tmp";
-constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 20000;
-constexpr uint32_t WIFI_RETRY_INTERVAL_MS = 30000;
-constexpr uint32_t SYNC_INTERVAL_MS = 15000;
-constexpr uint32_t ENROLLMENT_RECHECK_INTERVAL_MS = 15 * 60 * 1000;
-constexpr uint32_t NTP_SYNC_TIMEOUT_MS = 8000;
 constexpr uint32_t MAX_QUEUED_SESSIONS = 250;
-
-// Association-level retry tuning for the initial handshake against a single
-// scanned BSSID. iPhone Personal Hotspot in particular frequently rejects the
-// very first association attempt from a device with AUTH_EXPIRE (reason 2),
-// even at strong RSSI, and accepts an almost-immediate retry. These constants
-// bound how many quick retries happen inside one connectWiFi() call, which is
-// distinct from WIFI_RETRY_INTERVAL_MS (the outer loop's cool-down between
-// full reconnect attempts).
-constexpr int WIFI_ASSOC_MAX_ATTEMPTS = 3;
-constexpr uint32_t WIFI_ASSOC_ATTEMPT_TIMEOUT_MS = 8000;
-
-uint64_t lastWiFiAttemptMillis = 0;
-uint64_t lastSyncAttemptMillis = 0;
-uint64_t lastEnrollmentCheckMillis = 0;
 
 // -----------------------------------------------------------------------------
 // Forward declarations
@@ -195,20 +126,12 @@ void notifyError(const String &command, const String &code, const String &messag
 void notifyOk(const String &command, JsonDocument *data = nullptr);
 void notifyStatus();
 void sendPendingRecordsOverBle();
-bool connectWiFi(bool forceAttempt = false);
-const char *wifiStatusName(int status);
-const char *wifiDisconnectReasonName(int reason);
-void handleWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info);
-bool uploadOldestQueuedSession();
-bool verifyServerEnrollment();
 bool removeQueuedSessionById(const String &sessionId);
 void stopAndRecordSession(const String &reason, const String &status);
 void stopMotors();
 bool appendQueuedSession(const String &record);
 uint32_t countQueuedSessions();
 String isoTimestamp();
-bool ensureClockSynchronized(uint32_t timeoutMs = NTP_SYNC_TIMEOUT_MS);
-bool validApiBaseUrl(const String &url);
 bool assignmentLeaseActive();
 void saveActiveSessionCheckpoint();
 void clearActiveSessionCheckpoint();
@@ -254,7 +177,6 @@ class NeuroSenseCommandCallbacks : public BLECharacteristicCallbacks {
 void setup() {
   Serial.begin(115200);
   delay(500);
-  WiFi.onEvent(handleWiFiEvent);
 
   ledcAttach(M1_IN1, PWM_FREQ, PWM_RESOLUTION);
   ledcAttach(M1_IN2, PWM_FREQ, PWM_RESOLUTION);
@@ -270,10 +192,6 @@ void setup() {
   initializeDeviceIdentity();
   recoverInterruptedSession();
   initializeBle();
-  // BLE must become available immediately after boot. A saved Wi-Fi network is
-  // connected from loop() after advertising has started, so Wi-Fi retries can
-  // never prevent the patient app from discovering NeuroSense.
-  if (config.wifiSsid.length() > 0) wifiConnectRequested = true;
 
   Serial.println();
   Serial.println("========================================");
@@ -302,63 +220,6 @@ void loop() {
   if (pendingTransferRequested && bleConnected && !activeSession.running) {
     pendingTransferRequested = false;
     sendPendingRecordsOverBle();
-  }
-
-  if (wifiConnectRequested && !activeSession.running) {
-    wifiConnectRequested = false;
-    const bool connected = connectWiFi(true);
-    bool verified = serverEnrollmentVerified;
-    if (connected && config.deviceId.length() > 0 && config.patientId.length() > 0 &&
-        config.assignmentId.length() > 0 && config.apiToken.length() > 0) {
-      verifyServerEnrollment();
-      verified = serverEnrollmentVerified;
-    }
-    if (bleConnected) {
-      JsonDocument result;
-      result["type"] = "wifi_result";
-      result["phase"] = 2;
-      result["connected"] = connected;
-      result["server_verified"] = verified;
-      result["message"] = connected ? "Wi-Fi connected" : "Wi-Fi unable to connect";
-      result["ssid"] = config.wifiSsid;
-      result["wifi_status"] = lastWiFiStatusCode;
-      result["wifi_status_name"] = wifiStatusName(lastWiFiStatusCode);
-      result["disconnect_reason"] = lastWiFiDisconnectReason;
-      result["disconnect_reason_name"] = wifiDisconnectReasonName(lastWiFiDisconnectReason);
-      result["diagnostic"] = lastWiFiDiagnostic;
-      result["channel"] = lastWiFiChannel;
-      result["rssi"] = lastWiFiRssi;
-      notifyJson(result);
-    }
-  }
-
-  if (syncRequested && !activeSession.running) {
-    syncRequested = false;
-    const bool uploaded = uploadOldestQueuedSession();
-    if (bleConnected) {
-      JsonDocument result;
-      result["type"] = "sync_result";
-      result["uploaded"] = uploaded;
-      result["pending_sessions"] = countQueuedSessions();
-      notifyJson(result);
-    }
-  }
-
-  if (!activeSession.running && WiFi.status() != WL_CONNECTED &&
-      config.wifiSsid.length() > 0 && currentMillis - lastWiFiAttemptMillis >= WIFI_RETRY_INTERVAL_MS) {
-    if (connectWiFi(true) && !serverEnrollmentVerified) verifyServerEnrollment();
-  }
-
-  if (!activeSession.running && WiFi.status() == WL_CONNECTED &&
-      currentMillis - lastSyncAttemptMillis >= SYNC_INTERVAL_MS) {
-    lastSyncAttemptMillis = currentMillis;
-    uploadOldestQueuedSession();
-  }
-
-  if (!activeSession.running && WiFi.status() == WL_CONNECTED &&
-      config.assignmentId.length() > 0 && config.apiToken.length() > 0 &&
-      currentMillis - lastEnrollmentCheckMillis >= ENROLLMENT_RECHECK_INTERVAL_MS) {
-    verifyServerEnrollment();
   }
 
   if (!bleConnected && previousBleConnected) {
@@ -394,10 +255,6 @@ void loadConfiguration() {
   config.hardwareId = preferences.getString("hardware_id", "");
   config.deviceId = preferences.getString("device_id", "");
   config.displayName = preferences.getString("display_name", "");
-  config.wifiSsid = preferences.getString("wifi_ssid", "");
-  config.wifiPassword = preferences.getString("wifi_pass", "");
-  config.apiBaseUrl = preferences.getString("api_url", DEFAULT_API_BASE_URL);
-  config.apiToken = preferences.getString("api_token", "");
   config.patientId = preferences.getString("patient_id", "");
   config.assignmentId = preferences.getString("assign_id", "");
   config.assignmentValidUntilEpoch = preferences.getULong64("lease_until", 0);
@@ -406,7 +263,7 @@ void loadConfiguration() {
   config.maxHz = preferences.getFloat("max_hz", SYSTEM_MAX_HZ);
   config.maxDurationSeconds = preferences.getUInt("max_duration", MAX_PATIENT_DURATION_SECONDS);
   config.manualControlAllowed = preferences.getBool("manual", true);
-  serverEnrollmentVerified = preferences.getBool("verified", false);
+  assignmentActivated = preferences.getBool("assigned_active", false);
   deviceSequence = preferences.getUInt("sequence", 0);
   preferences.end();
 }
@@ -415,37 +272,16 @@ void saveLogicalDeviceId(const String &deviceId) {
   config.deviceId = deviceId;
   preferences.begin("neurosense", false);
   preferences.putString("device_id", deviceId);
-  preferences.putBool("verified", false);
+  preferences.putBool("assigned_active", false);
   preferences.end();
-  serverEnrollmentVerified = false;
+  assignmentActivated = false;
 }
 
-void saveEnrollmentVerified(bool verified) {
-  serverEnrollmentVerified = verified;
+void saveAssignmentActivated(bool activated) {
+  assignmentActivated = activated;
   preferences.begin("neurosense", false);
-  preferences.putBool("verified", verified);
+  preferences.putBool("assigned_active", activated);
   preferences.end();
-}
-
-void saveWiFiConfiguration(const String &ssid, const String &password) {
-  config.wifiSsid = ssid;
-  config.wifiPassword = password;
-  preferences.begin("neurosense", false);
-  preferences.putString("wifi_ssid", ssid);
-  preferences.putString("wifi_pass", password);
-  preferences.end();
-}
-
-void saveServerConfiguration(const String &apiBaseUrl, const String &apiToken) {
-  config.apiBaseUrl = apiBaseUrl;
-  config.apiToken = apiToken;
-  while (config.apiBaseUrl.endsWith("/")) config.apiBaseUrl.remove(config.apiBaseUrl.length() - 1);
-  preferences.begin("neurosense", false);
-  preferences.putString("api_url", config.apiBaseUrl);
-  preferences.putString("api_token", config.apiToken);
-  preferences.putBool("verified", false);
-  preferences.end();
-  serverEnrollmentVerified = false;
 }
 
 void saveAssignment(const String &patientId, const String &assignmentId, uint64_t validUntilEpoch) {
@@ -456,9 +292,9 @@ void saveAssignment(const String &patientId, const String &assignmentId, uint64_
   preferences.putString("patient_id", patientId);
   preferences.putString("assign_id", assignmentId);
   preferences.putULong64("lease_until", validUntilEpoch);
-  preferences.putBool("verified", false);
+  preferences.putBool("assigned_active", false);
   preferences.end();
-  serverEnrollmentVerified = false;
+  assignmentActivated = false;
 }
 
 void saveCarePlan(float minHz, float targetHz, float maxHz,
@@ -535,8 +371,8 @@ void recoverInterruptedSession() {
   session["duration_seconds"] = 0;
   session["status"] = "interrupted";
   session["completion_reason"] = "power_loss_or_reset";
-  session["sync_source"] = "device_wifi";
-  session["timestamp_source"] = time(nullptr) > 100000 ? "ntp" : "uptime_fallback";
+  session["sync_source"] = "mobile_ble_relay";
+  session["timestamp_source"] = time(nullptr) > 100000 ? "phone" : "uptime_fallback";
 
   String record;
   serializeJson(session, record);
@@ -637,19 +473,8 @@ void notifyStatus() {
   response["display_name"] = config.displayName;
   response["firmware_version"] = FIRMWARE_VERSION;
   response["ble_connected"] = bleConnected;
-  response["connection_phase"] = WiFi.status() == WL_CONNECTED ? 2 : 1;
-  response["wifi_connected"] = WiFi.status() == WL_CONNECTED;
-  response["wifi_ssid"] = config.wifiSsid;
-  response["wifi_rssi"] = WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0;
-  response["wifi_status"] = WiFi.status() == WL_CONNECTED ? WL_CONNECTED : lastWiFiStatusCode;
-  response["wifi_status_name"] = wifiStatusName(response["wifi_status"] | lastWiFiStatusCode);
-  response["wifi_disconnect_reason"] = lastWiFiDisconnectReason;
-  response["wifi_disconnect_reason_name"] = wifiDisconnectReasonName(lastWiFiDisconnectReason);
-  response["wifi_diagnostic"] = lastWiFiDiagnostic;
-  response["wifi_channel"] = lastWiFiChannel;
-  response["api_base_url"] = config.apiBaseUrl;
-  response["api_configured"] = config.apiBaseUrl.length() > 0 && config.apiToken.length() > 0;
-  response["server_verified"] = serverEnrollmentVerified;
+  response["transport"] = "ble_only";
+  response["assignment_active"] = assignmentActivated;
   response["provisioned"] = config.patientId.length() > 0 && config.assignmentId.length() > 0;
   response["patient_id"] = config.patientId;
   response["assignment_id"] = config.assignmentId;
@@ -713,49 +538,6 @@ void processBleCommand(const String &payload) {
     return;
   }
 
-  if (type == "set_wifi") {
-    const String ssid = command["ssid"] | "";
-    const String password = command["password"] | "";
-    if (ssid.length() == 0 || ssid.length() > 32 || password.length() > 63) {
-      notifyError(type, "invalid_wifi_configuration", "SSID must be 1-32 bytes and password at most 63 bytes.");
-      return;
-    }
-    // A set_wifi command always means "connect using these exact details".
-    // Disconnect any old network first; otherwise WL_CONNECTED could make a
-    // changed SSID appear successful while the ESP32 is still on the old AP.
-    WiFi.setAutoReconnect(false);
-    WiFi.disconnect(true, false);
-    saveWiFiConfiguration(ssid, password);
-    wifiConnectRequested = true;
-    JsonDocument data;
-    data["saved"] = true;
-    data["connection_pending"] = true;
-    data["phase"] = 2;
-    data["ssid"] = ssid;
-    notifyOk(type, &data);
-    return;
-  }
-
-  if (type == "verify_enrollment") {
-    wifiConnectRequested = true;
-    JsonDocument data;
-    data["verification_pending"] = true;
-    notifyOk(type, &data);
-    return;
-  }
-
-  if (type == "set_server") {
-    const String baseUrl = command["api_base_url"] | "";
-    const String token = command["api_token"] | "";
-    if (!validApiBaseUrl(baseUrl) || token.length() < 24 || token.length() > 256) {
-      notifyError(type, "invalid_server_configuration", "Use an HTTPS API URL and a 24-256 character device token.");
-      return;
-    }
-    saveServerConfiguration(baseUrl, token);
-    notifyOk(type);
-    return;
-  }
-
   if (type == "set_assignment") {
     const String patientId = command["patient_id"] | "";
     const String assignmentId = command["assignment_id"] | "";
@@ -791,15 +573,14 @@ void processBleCommand(const String &payload) {
 
   if (type == "activate_assignment") {
     if (config.deviceId.length() == 0 || config.patientId.length() == 0 ||
-        config.assignmentId.length() == 0 || config.apiToken.length() < 24 ||
+        config.assignmentId.length() == 0 ||
         !assignmentLeaseActive()) {
-      notifyError(type, "assignment_not_ready", "Identity, credential and active assignment lease are required.");
+      notifyError(type, "assignment_not_ready", "Identity and an active assignment lease are required.");
       return;
     }
-    // Prototype trust boundary: this command is accepted only after the
-    // authenticated patient app has obtained a device-specific credential
-    // from the server and delivered the complete configuration over BLE.
-    saveEnrollmentVerified(true);
+    // The authenticated patient app obtains this renewable assignment lease
+    // from the server and delivers it to NeuroSense over BLE.
+    saveAssignmentActivated(true);
     JsonDocument data;
     data["activated"] = true;
     data["assignment_id"] = config.assignmentId;
@@ -817,12 +598,12 @@ void processBleCommand(const String &payload) {
       notifyError(type, "device_not_assigned", "Patient and assignment configuration are required.");
       return;
     }
-    if (!serverEnrollmentVerified) {
+    if (!assignmentActivated) {
       notifyError(type, "enrollment_not_verified", "Install and activate the doctor assignment through NeuroVibe before motor use.");
       return;
     }
     if (!assignmentLeaseActive()) {
-      saveEnrollmentVerified(false);
+      saveAssignmentActivated(false);
       notifyError(type, "assignment_lease_expired", "The device assignment expired. Reconnect to NeuroVibe or contact the doctor.");
       return;
     }
@@ -919,15 +700,6 @@ void processBleCommand(const String &payload) {
     return;
   }
 
-  if (type == "sync_now") {
-    syncRequested = true;
-    JsonDocument data;
-    data["sync_pending"] = true;
-    data["pending_sessions"] = countQueuedSessions();
-    notifyOk(type, &data);
-    return;
-  }
-
   if (type == "factory_reset") {
     const String confirmation = command["confirmation"] | "";
     if (activeSession.running) {
@@ -1013,8 +785,8 @@ void stopAndRecordSession(const String &reason, const String &status) {
   session["duration_seconds"] = durationSeconds;
   session["status"] = status;
   session["completion_reason"] = reason;
-  session["sync_source"] = "device_wifi";
-  session["timestamp_source"] = time(nullptr) > 100000 ? "ntp" : "uptime_fallback";
+  session["sync_source"] = "mobile_ble_relay";
+  session["timestamp_source"] = time(nullptr) > 100000 ? "phone" : "uptime_fallback";
 
   String record;
   serializeJson(session, record);
@@ -1198,303 +970,14 @@ void sendPendingRecordsOverBle() {
 }
 
 // -----------------------------------------------------------------------------
-// Wi-Fi and server synchronization
+// Assignment lease
 // -----------------------------------------------------------------------------
-
-bool validApiBaseUrl(const String &url) {
-  if (url.length() == 0 || url.length() > 180 || url.indexOf('#') >= 0 || url.indexOf('?') >= 0) return false;
-  if (url.startsWith("https://")) return true;
-  // Plain HTTP is allowed only for explicit private-LAN development targets.
-  return url.startsWith("http://192.168.") || url.startsWith("http://10.");
-}
-
-bool ensureClockSynchronized(uint32_t timeoutMs) {
-  if (time(nullptr) > 1700000000) return true;
-  configTime(0, 0, "pool.ntp.org", "time.google.com", "time.cloudflare.com");
-  const uint64_t started = millis();
-  while (time(nullptr) <= 1700000000 && millis() - started < timeoutMs) delay(100);
-  return time(nullptr) > 1700000000;
-}
 
 bool assignmentLeaseActive() {
   if (config.assignmentId.length() == 0 || config.assignmentValidUntilEpoch == 0) return false;
   const time_t current = time(nullptr);
   if (current < 1700000000) return false;
   return static_cast<uint64_t>(current) <= config.assignmentValidUntilEpoch;
-}
-
-bool connectWiFi(bool forceAttempt) {
-  if (WiFi.status() == WL_CONNECTED) {
-    lastWiFiStatusCode = WL_CONNECTED;
-    lastWiFiDiagnostic = "connected";
-    Serial.println("Wi-Fi connected");
-    return true;
-  }
-  if (config.wifiSsid.length() == 0 || wifiAttemptInProgress) return false;
-  const uint64_t currentMillis = millis();
-  if (!forceAttempt && currentMillis - lastWiFiAttemptMillis < WIFI_RETRY_INTERVAL_MS) return false;
-
-  wifiAttemptInProgress = true;
-  lastWiFiAttemptMillis = currentMillis;
-  // A timed-out ESP-IDF association can remain active even though
-  // WiFi.status() is not WL_CONNECTED. Starting another connection while that
-  // state is active produces "sta is connecting, cannot set config". Always
-  // cancel the previous attempt before applying the next saved configuration.
-  WiFi.setAutoReconnect(false);
-  WiFi.disconnect(true, false);
-  delay(300);
-  WiFi.mode(WIFI_STA);
-  WiFi.setSleep(false);
-  WiFi.setHostname(config.displayName.c_str());
-  delay(100);
-
-  // Scan immediately before association. Besides providing a useful
-  // "SSID not visible" result, locking to the strongest matching BSSID and
-  // channel makes phone-hotspot association more reliable.
-  Serial.printf("Scanning for Wi-Fi '%s'...\n", config.wifiSsid.c_str());
-  const int networkCount = WiFi.scanNetworks(false, true);
-  int bestIndex = -1;
-  int bestRssi = -1000;
-  for (int i = 0; i < networkCount; ++i) {
-    if (WiFi.SSID(i) == config.wifiSsid && WiFi.RSSI(i) > bestRssi) {
-      bestIndex = i;
-      bestRssi = WiFi.RSSI(i);
-    }
-  }
-
-  if (bestIndex < 0) {
-    WiFi.scanDelete();
-    lastWiFiStatusCode = WL_NO_SSID_AVAIL;
-    lastWiFiDisconnectReason = 201;
-    lastWiFiChannel = 0;
-    lastWiFiRssi = 0;
-    lastWiFiDiagnostic = "ssid_not_visible_enable_2_4ghz_hotspot";
-    Serial.printf("Wi-Fi '%s' was not visible in a %d-network scan. Enable 2.4 GHz/Maximize Compatibility.\n",
-                  config.wifiSsid.c_str(), max(networkCount, 0));
-    Serial.println("Wi-Fi unable to connect");
-    WiFi.disconnect(true, false);
-    wifiAttemptInProgress = false;
-    return false;
-  }
-
-  uint8_t selectedBssid[6];
-  memcpy(selectedBssid, WiFi.BSSID(bestIndex), sizeof(selectedBssid));
-  lastWiFiChannel = WiFi.channel(bestIndex);
-  lastWiFiRssi = WiFi.RSSI(bestIndex);
-  const int encryption = static_cast<int>(WiFi.encryptionType(bestIndex));
-  char bssidText[18];
-  snprintf(bssidText, sizeof(bssidText), "%02X:%02X:%02X:%02X:%02X:%02X",
-           selectedBssid[0], selectedBssid[1], selectedBssid[2],
-           selectedBssid[3], selectedBssid[4], selectedBssid[5]);
-  WiFi.scanDelete();
-
-  // Force legacy 802.11 b/g/n on the STA interface. Some ESP32-C3 + iOS
-  // hotspot combinations stall or reject the auth handshake when the client
-  // advertises newer PHY/PMF capability sets the hotspot then has to
-  // renegotiate down from; forcing b/g/n avoids that class of failure.
-  esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N);
-
-  lastWiFiDisconnectReason = 0;
-  lastWiFiDiagnostic = "associating";
-  Serial.printf("Connecting to '%s': BSSID=%s channel=%d RSSI=%d dBm encryption=%d\n",
-                config.wifiSsid.c_str(), bssidText, lastWiFiChannel, lastWiFiRssi, encryption);
-
-  // iPhone Personal Hotspot very often rejects the first association attempt
-  // from a device with AUTH_EXPIRE (reason 2) even at strong RSSI, then
-  // accepts an almost-immediate retry. A single long wait on one attempt (as
-  // before) gives up before that retry ever happens, so retry a bounded
-  // number of times here instead, locking to the exact BSSID/channel just
-  // scanned on every attempt to avoid re-resolving a different virtual BSSID
-  // mid-handshake.
-  bool connected = false;
-  for (int attempt = 1; attempt <= WIFI_ASSOC_MAX_ATTEMPTS && !connected; ++attempt) {
-    if (attempt > 1) {
-      Serial.printf("Retrying association, attempt %d/%d (previous reason=%d, %s)\n",
-                    attempt, WIFI_ASSOC_MAX_ATTEMPTS, lastWiFiDisconnectReason,
-                    wifiDisconnectReasonName(lastWiFiDisconnectReason));
-      WiFi.disconnect(true, false);
-      delay(300);
-    }
-
-    WiFi.begin(config.wifiSsid.c_str(), config.wifiPassword.c_str(),
-               lastWiFiChannel, selectedBssid, true);
-
-    const uint64_t attemptStarted = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - attemptStarted < WIFI_ASSOC_ATTEMPT_TIMEOUT_MS) {
-      delay(150);
-    }
-    connected = (WiFi.status() == WL_CONNECTED);
-  }
-
-  if (connected) {
-    lastWiFiStatusCode = WL_CONNECTED;
-    lastWiFiDisconnectReason = 0;
-    lastWiFiDiagnostic = "connected";
-    WiFi.setAutoReconnect(true);
-    configTime(0, 0, "pool.ntp.org", "time.google.com");
-    Serial.printf("Wi-Fi connected: %s, IP=%s, RSSI=%d dBm\n",
-                  config.wifiSsid.c_str(), WiFi.localIP().toString().c_str(), WiFi.RSSI());
-    Serial.println("Wi-Fi connected");
-    wifiAttemptInProgress = false;
-    return true;
-  }
-
-  lastWiFiStatusCode = static_cast<int>(WiFi.status());
-  const int failureReason = lastWiFiDisconnectReason;
-  lastWiFiDiagnostic = wifiDisconnectReasonName(failureReason);
-  Serial.printf("Wi-Fi connection failed after %d attempts: status=%s (%d), reason=%s (%d); sessions remain queued\n",
-                WIFI_ASSOC_MAX_ATTEMPTS, wifiStatusName(lastWiFiStatusCode), lastWiFiStatusCode,
-                wifiDisconnectReasonName(failureReason), failureReason);
-  Serial.println("Wi-Fi unable to connect");
-  WiFi.disconnect(true, false);
-  delay(150);
-  lastWiFiDisconnectReason = failureReason;
-  wifiAttemptInProgress = false;
-  return false;
-}
-
-const char *wifiStatusName(int status) {
-  switch (status) {
-    case WL_IDLE_STATUS: return "idle_or_associating";
-    case WL_NO_SSID_AVAIL: return "ssid_not_found";
-    case WL_SCAN_COMPLETED: return "scan_completed";
-    case WL_CONNECTED: return "connected";
-    case WL_CONNECT_FAILED: return "authentication_failed";
-    case WL_CONNECTION_LOST: return "connection_lost";
-    case WL_DISCONNECTED: return "disconnected";
-    default: return "unknown";
-  }
-}
-
-const char *wifiDisconnectReasonName(int reason) {
-  switch (reason) {
-    case 0: return "no_disconnect_reason";
-    case 2: return "authentication_expired_check_hotspot_password";
-    case 4: return "association_expired";
-    case 15: return "four_way_handshake_timeout";
-    case 23: return "enterprise_authentication_failed";
-    case 200: return "beacon_timeout_or_weak_signal";
-    case 201: return "access_point_not_found";
-    case 202: return "authentication_failed_check_password";
-    case 203: return "association_failed_hotspot_rejected_device";
-    case 204: return "handshake_timeout_check_password";
-    case 205: return "connection_failed";
-    default: return "wifi_disconnected_unspecified";
-  }
-}
-
-void handleWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
-  if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
-    lastWiFiDisconnectReason = info.wifi_sta_disconnected.reason;
-  }
-}
-
-bool verifyServerEnrollment() {
-  lastEnrollmentCheckMillis = millis();
-  if (WiFi.status() != WL_CONNECTED || config.deviceId.length() == 0 ||
-      config.patientId.length() == 0 || config.assignmentId.length() == 0 ||
-      config.apiBaseUrl.length() == 0 || config.apiToken.length() == 0) return false;
-  if (!validApiBaseUrl(config.apiBaseUrl) || !ensureClockSynchronized()) return false;
-
-  JsonDocument request;
-  request["device_id"] = config.deviceId;
-  request["patient_id"] = config.patientId;
-  request["assignment_id"] = config.assignmentId;
-  String body;
-  serializeJson(request, body);
-
-  HTTPClient http;
-  WiFiClientSecure secureClient;
-  secureClient.setCACert(ISRG_ROOT_X1);
-  const String url = config.apiBaseUrl + "/api/device-check";
-  if (!http.begin(secureClient, url)) return false;
-  http.setConnectTimeout(12000);
-  http.setTimeout(15000);
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("Authorization", String("Bearer ") + config.apiToken);
-  const int responseCode = http.POST(body);
-  const String responseBody = http.getString();
-  http.end();
-
-  if (responseCode == 200) {
-    JsonDocument response;
-    if (!deserializeJson(response, responseBody) && (response["verified"] | false)) {
-      const uint64_t validUntilEpoch = response["assignment_valid_until_epoch"] | config.assignmentValidUntilEpoch;
-      const uint64_t serverTimeEpoch = response["server_time_epoch"] | 0ULL;
-      if (serverTimeEpoch >= 1700000000ULL) {
-        timeval currentTime = { static_cast<time_t>(serverTimeEpoch), 0 };
-        settimeofday(&currentTime, nullptr);
-      }
-      if (validUntilEpoch > 0) {
-        config.assignmentValidUntilEpoch = validUntilEpoch;
-        preferences.begin("neurosense", false);
-        preferences.putULong64("lease_until", validUntilEpoch);
-        preferences.end();
-      }
-      saveEnrollmentVerified(true);
-      Serial.println("Server confirmed device and patient assignment");
-      return true;
-    }
-  }
-  if (responseCode == 401 || responseCode == 403 || responseCode == 409) saveEnrollmentVerified(false);
-  Serial.printf("Enrollment verification failed: HTTP %d, response=%s\n", responseCode, responseBody.c_str());
-  return false;
-}
-
-bool uploadOldestQueuedSession() {
-  if (activeSession.running || WiFi.status() != WL_CONNECTED ||
-      config.apiBaseUrl.length() == 0 || config.apiToken.length() == 0) return false;
-
-  String record;
-  if (!peekOldestQueuedSession(record)) return false;
-
-  JsonDocument parsed;
-  if (deserializeJson(parsed, record)) return false;
-  const String sessionId = parsed["session_id"] | "";
-  // A record uploaded directly by the device must identify the direct route.
-  parsed["sync_source"] = "device_wifi";
-  serializeJson(parsed, record);
-
-  const String url = config.apiBaseUrl + "/api/therapy-sessions";
-  if (!validApiBaseUrl(config.apiBaseUrl)) {
-    Serial.println("Session upload blocked: invalid API base URL");
-    return false;
-  }
-
-  HTTPClient http;
-  WiFiClient plainClient;
-  WiFiClientSecure secureClient;
-  bool begun = false;
-  if (url.startsWith("https://")) {
-    if (!ensureClockSynchronized()) {
-      Serial.println("Session upload deferred: clock is not synchronized for TLS validation");
-      return false;
-    }
-    secureClient.setCACert(ISRG_ROOT_X1);
-    begun = http.begin(secureClient, url);
-  } else {
-    begun = http.begin(plainClient, url);
-  }
-  if (!begun) return false;
-  http.setConnectTimeout(12000);
-  http.setTimeout(15000);
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("Authorization", String("Bearer ") + config.apiToken);
-  const int responseCode = http.POST(record);
-  const String responseBody = http.getString();
-  http.end();
-
-  if (responseCode == 200 || responseCode == 201) {
-    JsonDocument response;
-    if (!deserializeJson(response, responseBody) && (response["acknowledged"] | false)) {
-      removeQueuedSessionById(sessionId);
-      Serial.printf("Uploaded and acknowledged session %s\n", sessionId.c_str());
-      return true;
-    }
-  }
-
-  Serial.printf("Session upload failed: HTTP %d, response=%s\n", responseCode, responseBody.c_str());
-  return false;
 }
 
 // -----------------------------------------------------------------------------
@@ -1510,7 +993,7 @@ String isoTimestamp() {
     strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", &utc);
     return String(timestamp);
   }
-  // Preserves event ordering before NTP is available. The server/app must treat
+  // Preserves event ordering before mobile-provided time is available. The app must treat
   // this as an unsynchronized timestamp, not trusted wall-clock time.
   char fallback[25];
   snprintf(fallback, sizeof(fallback), "1970-01-01T00:00:%02lluZ", (millis() / 1000ULL) % 60ULL);
@@ -1523,7 +1006,6 @@ void factoryReset() {
   preferences.clear();
   preferences.end();
   LittleFS.remove(QUEUE_FILE);
-  WiFi.disconnect(true, true);
   delay(250);
   ESP.restart();
 }
