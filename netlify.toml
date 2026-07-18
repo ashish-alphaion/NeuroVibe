@@ -42,6 +42,12 @@
   force = true
 
 [[redirects]]
+  from = "/api/device-hz"
+  to = "/.netlify/functions/device-hz"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/api/assignment-email"
   to = "/.netlify/functions/assignment-email"
   status = 200
