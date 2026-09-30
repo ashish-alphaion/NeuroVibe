@@ -1,9 +1,0 @@
-{
-  "name": "neurovibe-doctor-portal",
-  "version": "0.1.0",
-  "private": true,
-  "scripts": {
-    "dev": "node dev-server.mjs",
-    "check": "node --check assets/app.js && node --check assets/auth-bootstrap.js && node --check assets/modules.js && node --check assets/auth.js && node --check assets/supabase-client.js && node --check dev-server.mjs"
-  }
-}

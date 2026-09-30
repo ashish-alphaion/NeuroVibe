@@ -1,0 +1,139 @@
+#line 1 "C:\\Users\\user\\Documents\\NeuroVibe\\NeuroSense\\app\\build\\intermediates\\merged_res_blame_folder\\debug\\mergeDebugResources\\out\\single\\mergeDebugResources.json"
+[
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\mipmap-xxhdpi_ic_launcher_round.png.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\mipmap-xxhdpi\\ic_launcher_round.png"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\mipmap-mdpi_ic_launcher_round.png.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\mipmap-mdpi\\ic_launcher_round.png"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\drawable_ic_stop.xml.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\drawable\\ic_stop.xml"
+    },
+    {
+        "merged": "com.neurosense.app-debug-6:/drawable_ic_arrow_forward.xml.flat",
+        "source": "com.neurosense.app-main-8:/drawable/ic_arrow_forward.xml"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\drawable_ic_help.xml.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\drawable\\ic_help.xml"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\mipmap-anydpi-v26_ic_launcher.xml.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\mipmap-anydpi-v26\\ic_launcher.xml"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\drawable-nodpi_hero_device_close.png.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\drawable-nodpi\\hero_device_close.png"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\drawable_panel_background.xml.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\drawable\\panel_background.xml"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\drawable_ic_settings.xml.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\drawable\\ic_settings.xml"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\drawable-nodpi_hero_device_full.png.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\drawable-nodpi\\hero_device_full.png"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\mipmap-mdpi_ic_launcher.png.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\mipmap-mdpi\\ic_launcher.png"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\mipmap-xxhdpi_ic_launcher.png.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\mipmap-xxhdpi\\ic_launcher.png"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\drawable_ic_tune.xml.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\drawable\\ic_tune.xml"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\drawable_app_background.xml.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\drawable\\app_background.xml"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\drawable-nodpi_neurovibe_product.png.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\drawable-nodpi\\neurovibe_product.png"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\drawable_ios_slider_thumb.xml.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\drawable\\ios_slider_thumb.xml"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\drawable_ic_presets.xml.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\drawable\\ic_presets.xml"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\drawable_ic_signal.xml.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\drawable\\ic_signal.xml"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\drawable_ic_bluetooth.xml.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\drawable\\ic_bluetooth.xml"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\drawable_ic_neurosense.xml.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\drawable\\ic_neurosense.xml"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\drawable_ic_play.xml.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\drawable\\ic_play.xml"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\mipmap-xxxhdpi_ic_launcher_round.png.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\mipmap-xxxhdpi\\ic_launcher_round.png"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\drawable_ic_brain_circuit.xml.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\drawable\\ic_brain_circuit.xml"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\mipmap-xhdpi_ic_launcher.png.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\mipmap-xhdpi\\ic_launcher.png"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\drawable-nodpi_hero_lifestyle.png.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\drawable-nodpi\\hero_lifestyle.png"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\drawable_ios_slider_progress.xml.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\drawable\\ios_slider_progress.xml"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\mipmap-anydpi-v26_ic_launcher_round.xml.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\mipmap-anydpi-v26\\ic_launcher_round.xml"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\mipmap-xhdpi_ic_launcher_round.png.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\mipmap-xhdpi\\ic_launcher_round.png"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\drawable-nodpi_ic_launcher_foreground.png.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\drawable-nodpi\\ic_launcher_foreground.png"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\drawable_ic_device.xml.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\drawable\\ic_device.xml"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\drawable_ic_info.xml.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\drawable\\ic_info.xml"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\mipmap-hdpi_ic_launcher_round.png.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\mipmap-hdpi\\ic_launcher_round.png"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\mipmap-xxxhdpi_ic_launcher.png.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\mipmap-xxxhdpi\\ic_launcher.png"
+    },
+    {
+        "merged": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-6:\\mipmap-hdpi_ic_launcher.png.flat",
+        "source": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-main-8:\\mipmap-hdpi\\ic_launcher.png"
+    }
+]

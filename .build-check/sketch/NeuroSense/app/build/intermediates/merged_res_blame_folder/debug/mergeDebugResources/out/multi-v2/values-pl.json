@@ -1,0 +1,20 @@
+#line 1 "C:\\Users\\user\\Documents\\NeuroVibe\\NeuroSense\\app\\build\\intermediates\\merged_res_blame_folder\\debug\\mergeDebugResources\\out\\multi-v2\\values-pl.json"
+{
+    "logs": [
+        {
+            "outputFile": "com.neurosense.app-mergeDebugResources-4:/values-pl/values-pl.xml",
+            "map": [
+                {
+                    "source": "C:\\Users\\user\\.gradle\\caches\\8.9\\transforms\\6f61606391ba590d6ca80cbdda7a3ded\\transformed\\core-1.1.0\\res\\values-pl\\values-pl.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "100",
+                        "endOffsets": "151"
+                    }
+                }
+            ]
+        }
+    ]
+}

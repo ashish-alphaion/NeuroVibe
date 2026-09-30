@@ -1,3 +1,4 @@
+#line 1 "C:\\Users\\user\\Documents\\NeuroVibe\\README.md"
 # NeuroVibe + NeuroSense
 
 Arduino firmware for an ESP32-C3, one DRV8833 dual H-bridge, and two

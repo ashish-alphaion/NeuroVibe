@@ -1,0 +1,15 @@
+#line 1 "C:\\Users\\user\\Documents\\NeuroVibe\\NeuroSense\\app\\build\\intermediates\\merged_res_blame_folder\\debug\\mergeDebugResources\\out\\single\\mergeDebugResources.json"
+[
+    {
+        "merged": "com.neurosense.app-debug-4:/drawable_app_background.xml.flat",
+        "source": "com.neurosense.app-main-6:/drawable/app_background.xml"
+    },
+    {
+        "merged": "com.neurosense.app-debug-4:/drawable_panel_background.xml.flat",
+        "source": "com.neurosense.app-main-6:/drawable/panel_background.xml"
+    },
+    {
+        "merged": "com.neurosense.app-debug-4:/drawable_ic_neurosense.xml.flat",
+        "source": "com.neurosense.app-main-6:/drawable/ic_neurosense.xml"
+    }
+]

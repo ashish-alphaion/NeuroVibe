@@ -1,0 +1,22 @@
+#line 1 "C:\\Users\\user\\Documents\\NeuroVibe\\NeuroSense\\app\\build\\outputs\\apk\\debug\\output-metadata.json"
+{
+  "version": 3,
+  "artifactType": {
+    "type": "APK",
+    "kind": "Directory"
+  },
+  "applicationId": "com.neurosense.app",
+  "variantName": "debug",
+  "elements": [
+    {
+      "type": "SINGLE",
+      "filters": [],
+      "attributes": [],
+      "versionCode": 1,
+      "versionName": "1.0",
+      "outputFile": "app-debug.apk"
+    }
+  ],
+  "elementType": "File",
+  "minSdkVersionForDexing": 26
+}

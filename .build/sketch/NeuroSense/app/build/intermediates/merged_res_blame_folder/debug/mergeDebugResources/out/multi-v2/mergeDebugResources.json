@@ -1,0 +1,114 @@
+#line 1 "C:\\Users\\user\\Documents\\NeuroVibe\\NeuroSense\\app\\build\\intermediates\\merged_res_blame_folder\\debug\\mergeDebugResources\\out\\multi-v2\\mergeDebugResources.json"
+{
+    "logs": [
+        {
+            "outputFile": "com.neurosense.app-debug-4:/values_values.arsc.flat",
+            "map": [
+                {
+                    "source": "C:\\Users\\user\\Documents\\NeuroVibe\\NeuroSense\\app\\src\\main\\res\\values\\strings.xml",
+                    "from": {
+                        "startLines": "-1",
+                        "startColumns": "-1",
+                        "startOffsets": "-1"
+                    },
+                    "to": {
+                        "startLines": "4",
+                        "startColumns": "4",
+                        "startOffsets": "133",
+                        "endColumns": "47",
+                        "endOffsets": "176"
+                    }
+                },
+                {
+                    "source": "C:\\Users\\user\\Documents\\NeuroVibe\\NeuroSense\\app\\src\\main\\res\\values\\colors.xml",
+                    "from": {
+                        "startLines": "-1,-1",
+                        "startColumns": "-1,-1",
+                        "startOffsets": "-1,-1"
+                    },
+                    "to": {
+                        "startLines": "2,3",
+                        "startColumns": "4,4",
+                        "startOffsets": "55,94",
+                        "endColumns": "38,38",
+                        "endOffsets": "89,128"
+                    }
+                },
+                {
+                    "source": "C:\\Users\\user\\Documents\\NeuroVibe\\NeuroSense\\app\\src\\main\\res\\values\\styles.xml",
+                    "from": {
+                        "startLines": "-1",
+                        "startColumns": "-1",
+                        "startOffsets": "-1"
+                    },
+                    "to": {
+                        "startLines": "5",
+                        "startColumns": "4",
+                        "startOffsets": "181",
+                        "endLines": "12",
+                        "endColumns": "12",
+                        "endOffsets": "651"
+                    }
+                }
+            ]
+        },
+        {
+            "outputFile": "C:\\Users\\user\\.gradle\\daemon\\8.9\\com.neurosense.app-debug-4:\\values_values.arsc.flat",
+            "map": [
+                {
+                    "source": "C:\\Users\\user\\Documents\\NeuroVibe\\NeuroSense\\app\\src\\main\\res\\values\\strings.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "47",
+                        "endOffsets": "98"
+                    },
+                    "to": {
+                        "startLines": "6",
+                        "startColumns": "4",
+                        "startOffsets": "215",
+                        "endColumns": "47",
+                        "endOffsets": "258"
+                    }
+                },
+                {
+                    "source": "C:\\Users\\user\\Documents\\NeuroVibe\\NeuroSense\\app\\src\\main\\res\\values\\colors.xml",
+                    "from": {
+                        "startLines": "4,2,3,5",
+                        "startColumns": "4,4,4,4",
+                        "startOffsets": "136,55,94,175",
+                        "endColumns": "38,38,41,39",
+                        "endOffsets": "170,89,131,210"
+                    },
+                    "to": {
+                        "startLines": "2,3,4,5",
+                        "startColumns": "4,4,4,4",
+                        "startOffsets": "55,94,133,175",
+                        "endColumns": "38,38,41,39",
+                        "endOffsets": "89,128,170,210"
+                    }
+                },
+                {
+                    "source": "C:\\Users\\user\\Documents\\NeuroVibe\\NeuroSense\\app\\src\\main\\res\\values\\styles.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endLines": "9",
+                        "endColumns": "12",
+                        "endOffsets": "525"
+                    },
+                    "to": {
+                        "startLines": "7",
+                        "startColumns": "4",
+                        "startOffsets": "263",
+                        "endLines": "14",
+                        "endColumns": "12",
+                        "endOffsets": "733"
+                    }
+                }
+            ]
+        }
+    ]
+}
