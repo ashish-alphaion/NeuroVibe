@@ -5,6 +5,7 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.bluetooth.BluetoothDevice;
 import android.content.pm.PackageManager;
+import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -25,12 +26,15 @@ import java.util.HashSet;
 import java.util.Set;
 
 public final class MainActivity extends Activity implements NeuroSenseBleManager.Listener {
-    private static final int NAVY = Color.rgb(11, 35, 57);
-    private static final int BLUE = Color.rgb(18, 111, 168);
-    private static final int PALE = Color.rgb(243, 249, 253);
-    private static final int GREEN = Color.rgb(27, 126, 82);
-    private static final int RED = Color.rgb(190, 40, 45);
-    private static final int MUTED = Color.rgb(88, 103, 115);
+    // Enhanced iOS Style Colors
+    private static final int SYSTEM_BACKGROUND = Color.rgb(242, 242, 247);
+    private static final int CARD_BACKGROUND = Color.WHITE;
+    private static final int SYSTEM_BLUE = Color.rgb(0, 122, 255);
+    private static final int SYSTEM_GREEN = Color.rgb(52, 199, 89);
+    private static final int SYSTEM_RED = Color.rgb(255, 59, 48);
+    private static final int TEXT_PRIMARY = Color.BLACK;
+    private static final int TEXT_SECONDARY = Color.rgb(142, 142, 147);
+    private static final int SEPARATOR_COLOR = Color.rgb(229, 229, 234);
 
     private NeuroSenseBleManager ble;
     private LinearLayout page;
@@ -49,8 +53,8 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
-        getWindow().setStatusBarColor(PALE);
-        getWindow().setNavigationBarColor(Color.WHITE);
+        getWindow().setStatusBarColor(SYSTEM_BACKGROUND);
+        getWindow().setNavigationBarColor(SYSTEM_BACKGROUND);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
         ble = new NeuroSenseBleManager(this, this);
         buildScreen();
@@ -60,42 +64,58 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
     private void buildScreen() {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
-        scroll.setBackgroundColor(PALE);
+        scroll.setBackgroundColor(SYSTEM_BACKGROUND);
         page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
-        page.setPadding(dp(22), dp(24), dp(22), dp(30));
+        page.setPadding(dp(16), dp(40), dp(16), dp(40)); // Increased padding for modern feel
         scroll.addView(page, new ScrollView.LayoutParams(-1, -2));
         setContentView(scroll);
 
-        TextView brand = text("NeuroVibe", 31, NAVY, true);
-        page.addView(brand);
-        page.addView(text("Simple Bluetooth motor control", 15, MUTED, false), margin(0, 2, 0, 24));
+        // Header - iOS Large Title
+        TextView brand = text("NeuroVibe", 34, TEXT_PRIMARY, true);
+        brand.setGravity(Gravity.START);
+        page.addView(brand, margin(8, 0, 0, 32));
 
-        LinearLayout connectionCard = card(Color.WHITE);
-        connectionCard.addView(text("DEVICE CONNECTION", 11, BLUE, true));
-        connectionText = text("Not connected", 22, NAVY, true);
-        connectionCard.addView(connectionText, margin(0, 8, 0, 4));
-        connectionCard.addView(text("Keep NeuroSense powered and close to this tablet.", 14, MUTED, false));
-        scanButton = button("Scan for NeuroSense", BLUE);
+        // DEVICE CONNECTION SECTION
+        TextView connectionLabel = text("DEVICE CONNECTION", 13, TEXT_SECONDARY, false);
+        page.addView(connectionLabel, margin(16, 0, 0, 8));
+
+        LinearLayout connectionCard = card(CARD_BACKGROUND);
+        connectionText = text("Not connected", 17, TEXT_PRIMARY, true);
+        connectionCard.addView(connectionText);
+        connectionCard.addView(text("Keep NeuroSense powered and close to this device.", 15, TEXT_SECONDARY, false), margin(0, 6, 0, 20));
+        
+        scanButton = primaryButton("Scan for NeuroSense", SYSTEM_BLUE);
         scanButton.setOnClickListener(v -> requestBluetoothPermissions());
-        connectionCard.addView(scanButton, margin(0, 16, 0, 0));
+        connectionCard.addView(scanButton);
+        
         deviceList = new LinearLayout(this);
         deviceList.setOrientation(LinearLayout.VERTICAL);
-        connectionCard.addView(deviceList, margin(0, 10, 0, 0));
+        connectionCard.addView(deviceList, margin(0, 16, 0, 0));
         page.addView(connectionCard);
 
-        LinearLayout controlCard = card(NAVY);
-        TextView controlLabel = text("MOTOR CONTROL", 11, Color.rgb(149, 213, 250), true);
-        controlCard.addView(controlLabel);
-        frequencyText = text(selectedHz + " Hz", 43, Color.WHITE, true);
-        controlCard.addView(frequencyText, margin(0, 10, 0, 3));
-        motorText = text("Motors stopped", 14, Color.rgb(205, 225, 239), false);
+        // MOTOR CONTROL SECTION
+        TextView controlLabel = text("MOTOR CONTROL", 13, TEXT_SECONDARY, false);
+        page.addView(controlLabel, margin(16, 32, 0, 8));
+
+        LinearLayout controlCard = card(CARD_BACKGROUND);
+        
+        frequencyText = text(selectedHz + " Hz", 56, TEXT_PRIMARY, true);
+        frequencyText.setGravity(Gravity.CENTER);
+        controlCard.addView(frequencyText, margin(0, 16, 0, 4));
+        
+        motorText = text("Motors stopped", 16, TEXT_SECONDARY, true);
+        motorText.setGravity(Gravity.CENTER);
         controlCard.addView(motorText);
 
         frequencySlider = new SeekBar(this);
         frequencySlider.setMax(230);
         frequencySlider.setProgress(selectedHz);
         frequencySlider.setEnabled(false);
+        if (Build.VERSION.SDK_INT >= 21) {
+            frequencySlider.setProgressTintList(ColorStateList.valueOf(SYSTEM_BLUE));
+            frequencySlider.setThumbTintList(ColorStateList.valueOf(SYSTEM_BLUE));
+        }
         frequencySlider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar seekBar, int value, boolean fromUser) {
                 selectedHz = value;
@@ -106,22 +126,36 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
                 if (running) sendFrequency(selectedHz);
             }
         });
-        controlCard.addView(frequencySlider, margin(0, 18, 0, 10));
-        controlCard.addView(text("0 Hz stops the motors. Range: 0–230 Hz.", 13, Color.rgb(205, 225, 239), false));
+        controlCard.addView(frequencySlider, margin(0, 36, 0, 12));
+        
+        TextView sliderHint = text("Range: 0–230 Hz. Set 0 Hz to stop.", 13, TEXT_SECONDARY, false);
+        sliderHint.setGravity(Gravity.CENTER);
+        controlCard.addView(sliderHint, margin(0, 0, 0, 36));
 
-        startButton = button("Start motors", GREEN);
+        LinearLayout buttonRow = new LinearLayout(this);
+        buttonRow.setOrientation(LinearLayout.HORIZONTAL);
+        
+        startButton = primaryButton("Start Motors", SYSTEM_GREEN);
         startButton.setEnabled(false);
         startButton.setOnClickListener(v -> sendFrequency(selectedHz));
-        controlCard.addView(startButton, margin(0, 20, 0, 10));
-        stopButton = button("STOP", RED);
+        LinearLayout.LayoutParams startParams = new LinearLayout.LayoutParams(0, -2, 1);
+        startParams.setMargins(0, 0, dp(6), 0);
+        buttonRow.addView(startButton, startParams);
+        
+        stopButton = primaryButton("Stop Motors", SYSTEM_RED);
         stopButton.setEnabled(false);
         stopButton.setOnClickListener(v -> ble.sendType("stop"));
-        controlCard.addView(stopButton);
-        page.addView(controlCard, margin(0, 18, 0, 0));
+        LinearLayout.LayoutParams stopParams = new LinearLayout.LayoutParams(0, -2, 1);
+        stopParams.setMargins(dp(6), 0, 0, 0);
+        buttonRow.addView(stopButton, stopParams);
+        
+        controlCard.addView(buttonRow);
+        page.addView(controlCard, margin(0, 0, 0, 24));
 
-        page.addView(text(
-                "The displayed value is the requested control value. Exact mechanical vibration frequency requires a vibration sensor and calibration.",
-                12, MUTED, false), margin(4, 16, 4, 0));
+        TextView footerText = text("The displayed value is the requested control value. Exact mechanical vibration frequency requires a vibration sensor and calibration.", 12, TEXT_SECONDARY, false);
+        footerText.setGravity(Gravity.CENTER);
+        page.addView(footerText, margin(16, 8, 16, 0));
+        
         updateControls();
     }
 
@@ -162,7 +196,7 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
         }
         discovered.clear();
         deviceList.removeAllViews();
-        deviceList.addView(text("Scanning nearby devices…", 14, MUTED, false));
+        deviceList.addView(text("Scanning nearby devices…", 15, TEXT_SECONDARY, false));
         scanButton.setText("Scanning…");
         ble.startScan();
     }
@@ -173,14 +207,28 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
         if (!discovered.add(address)) return;
         if (discovered.size() == 1) deviceList.removeAllViews();
         String name = device.getName() == null ? "NeuroSense" : device.getName();
-        Button result = button(name + "   ·   " + rssi + " dBm", Color.WHITE);
-        result.setTextColor(NAVY);
+        
+        Button result = new Button(this);
+        result.setText(name + "  ·  " + rssi + " dBm");
+        result.setTextSize(16);
+        result.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        result.setAllCaps(false);
+        result.setTextColor(SYSTEM_BLUE);
         result.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+        result.setBackgroundColor(Color.TRANSPARENT);
+        result.setPadding(dp(4), dp(14), dp(4), dp(14));
+        
         result.setOnClickListener(v -> {
             connectionText.setText("Connecting to " + name + "…");
             ble.connect(device);
         });
-        deviceList.addView(result, margin(0, 4, 0, 6));
+        
+        if (deviceList.getChildCount() > 0) {
+            View separator = new View(this);
+            separator.setBackgroundColor(SEPARATOR_COLOR);
+            deviceList.addView(separator, new LinearLayout.LayoutParams(-1, dp(1)));
+        }
+        deviceList.addView(result, margin(0, 0, 0, 0));
     }
 
     @Override public void onConnectionChanged(boolean isConnected, String name) {
@@ -208,6 +256,7 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
                     frequencyText.setText(hz + " Hz");
                 }
                 motorText.setText(running ? "Both motors running" : "Motors stopped");
+                motorText.setTextColor(running ? SYSTEM_GREEN : TEXT_SECONDARY);
                 updateControls();
                 String message = response.optString("message", "");
                 if (!message.isEmpty()) toast(message);
@@ -238,8 +287,12 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
         frequencySlider.setEnabled(connected);
         startButton.setEnabled(connected);
         stopButton.setEnabled(connected && running);
+        
         motorText.setText(running ? "Both motors running" : "Motors stopped");
-        connectionText.setTextColor(connected ? GREEN : NAVY);
+        connectionText.setTextColor(connected ? SYSTEM_GREEN : TEXT_PRIMARY);
+        
+        startButton.setAlpha(connected ? 1.0f : 0.5f);
+        stopButton.setAlpha((connected && running) ? 1.0f : 0.5f);
     }
 
     private LinearLayout card(int color) {
@@ -248,24 +301,26 @@ public final class MainActivity extends Activity implements NeuroSenseBleManager
         card.setPadding(dp(20), dp(20), dp(20), dp(20));
         GradientDrawable background = new GradientDrawable();
         background.setColor(color);
-        background.setCornerRadius(dp(20));
+        background.setCornerRadius(dp(16)); // Softer, more iOS-like radius
         card.setBackground(background);
+        if (Build.VERSION.SDK_INT >= 21) {
+            card.setElevation(dp(2)); // Very subtle drop shadow
+        }
         return card;
     }
 
-    private Button button(String label, int color) {
+    private Button primaryButton(String label, int color) {
         Button button = new Button(this);
         button.setText(label);
-        button.setTextSize(15);
+        button.setTextSize(17); 
         button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         button.setAllCaps(false);
-        button.setMinHeight(dp(52));
+        button.setMinHeight(dp(54)); // Slightly taller for better tap targets
         GradientDrawable background = new GradientDrawable();
         background.setColor(color);
-        background.setCornerRadius(dp(14));
-        if (color == Color.WHITE) background.setStroke(dp(1), Color.rgb(207, 220, 228));
+        background.setCornerRadius(dp(12)); 
         button.setBackground(background);
-        button.setTextColor(color == Color.WHITE ? NAVY : Color.WHITE);
+        button.setTextColor(Color.WHITE);
         return button;
     }
 
